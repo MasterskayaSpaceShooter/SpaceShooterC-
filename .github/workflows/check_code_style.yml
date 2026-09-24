@@ -1,0 +1,28 @@
+name: Code Style Check
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  clang-format:
+    name: Check code style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify .clang-format exists
+        run: test -f .clang-format || (echo "::error ::.clang-format not found" && exit 1)
+
+      - name: Install clang-format
+        run: pip install clang-format==18.1.8
+
+      - name: Show clang-format version
+        run: clang-format --version
+
+      - name: Check formatting
+        run: |
+          find . -regex '.*\.\(cpp\|hpp\|cc\|cxx\|h\|c\)' \
+            -exec clang-format --dry-run --Werror {} +
