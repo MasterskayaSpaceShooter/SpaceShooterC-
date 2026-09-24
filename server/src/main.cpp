@@ -1,0 +1,18 @@
+#include <asio.hpp>
+#include <common/protocol.hpp>
+#include <iostream>
+
+int main() {
+    try {
+        asio::io_context io_context;
+
+        std::cout << "[Server] SpaceShooterC- Server Started." << std::endl;
+        std::cout << "[Server] Protocol Check: " << common::getCommandName(common::GameCommand::JoinGame) << std::endl;
+
+        // В следующих шагах здесь будет асинхронный прием подключений
+        io_context.run();
+    } catch (const std::exception& e) {
+        std::cerr << "[Server] Exception: " << e.what() << std::endl;
+    }
+    return 0;
+}
