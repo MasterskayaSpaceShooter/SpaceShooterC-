@@ -12,56 +12,75 @@ fi
 COMPONENT=$1
 CONFIG=$2
 
-# Маппинг понятных имен на таргеты из CMakeLists.txt
+# Маппинг понятных имен на новые раздельные таргеты из CMakeLists.txt
 case $COMPONENT in
-    server) TARGET="server_app" ;;
-    client) TARGET="client_app" ;;
-    tests)  TARGET="unit_tests" ;;
+    server) TARGETS="server_app" ;;
+    client) TARGETS="client_app" ;;
+    tests)  TARGETS="unit_tests_common unit_tests_server unit_tests_client" ;;
     *) echo "Ошибка: Неверный компонент. Допустимы: server, client, tests"; exit 1 ;;
-esac
+esac # <--- ИСПРАВЛЕНО: Вместо fi теперь здесь правильно написано esac
 
-# Проверка корректности конфигурации
+# Имя конфигурации для вызова
 if [ "$CONFIG" != "Debug" ] && [ "$CONFIG" != "Release" ]; then
     echo "Ошибка: Неверная конфигурация. Допустимы: Debug, Release"
     exit 1
 fi
 
+# КАЖДАЯ конфигурация использует собственную папку сборки (как в пресетах,
+# которые генерирует Conan: binaryDir build/Debug и build/Release).
+# Это критично: Conan раскладывает данные зависимостей (GTest, Boost) по
+# конфигурациям, и CMake должен читать генераторы ИМЕННО своей конфигурации.
+# Иначе (одна общая папка build/ с тулчейном Release) для Debug-сборки
+# загружаются только Release-данные GTest — include-пути оказываются пустыми.
+BUILD_DIR="build/$CONFIG"
+GENERATORS_DIR="$BUILD_DIR/generators"
+
 echo "========================================================="
-echo " Настройка окружения Conan и проверка Ninja..."
+echo " Настройка окружения Conan [$CONFIG]..."
 echo "========================================================="
-# Загружаем мультиконфигурационное окружение Конана (берем из папки Release)
-if [ -f "build/Release/generators/conanbuild.sh" ]; then
-    source build/Release/generators/conanbuild.sh
+# Загружаем окружение Конана, соответствующее конфигурации (внутренний Ninja и пр.)
+if [ -f "$GENERATORS_DIR/conanbuild.sh" ]; then
+    source "$GENERATORS_DIR/conanbuild.sh"
 else
-    echo "Ошибка: Скрипты генераторов не найдены. Запустите сначала 'conan install .'"
+    echo "Ошибка: Скрипты генераторов не найдены ($GENERATORS_DIR)."
+    echo "Запустите сначала: conan install . --build=missing -s:a build_type=$CONFIG"
     exit 1
 fi
 
-# Если CMake проект ещё не был сконфигурирован, запускаем генерацию пресетов
-if [ ! -d "build" ] || [ ! -f "build/build-Debug.ninja" ]; then
-    echo "Первоначальная конфигурация CMake через пресеты..."
-    cmake --preset conan-default
+# Однократная конфигурация CMake для данной конфигурации.
+# Тулчейн Конана сам добавляет свою папку генераторов в CMAKE_PREFIX_PATH.
+if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    echo "Конфигурация CMake [$CONFIG]..."
+    cmake -B "$BUILD_DIR" \
+          -G "Ninja Multi-Config" \
+          -DCMAKE_TOOLCHAIN_FILE="$GENERATORS_DIR/conan_toolchain.cmake"
 fi
 
-echo "========================================================="
-echo " Очистка кэша сборки для таргета: $TARGET [$CONFIG]"
-echo "========================================================="
-# Вызываем встроенный инструмент очистки CMake/Ninja строго для одной цели
-cmake --build --preset conan-default --config $CONFIG --target $TARGET/clean
+# В цикле очищаем и собираем каждый таргет через нативные команды Ninja
+for TARGET in $TARGETS; do
+    echo "========================================================="
+    echo " Очистка кэша сборки для таргета: $TARGET [$CONFIG]"
+    echo "========================================================="
+    # Ninja Multi-Config: внутри build/<Config> лежат правила ВСЕХ конфигураций,
+    # а дефолтный phony-таргет (build.ninja) указывает на Debug-выходы.
+    # Очистка через дефолтный файл удалила бы артефакты другой конфигурации,
+    # поэтому чистим ИМЕННО свой конфигурационный файл build-<Config>.ninja.
+    ninja -C "$BUILD_DIR" -f "build-$CONFIG.ninja" -t clean "$TARGET"
 
-echo "========================================================="
-echo " Сборка таргета: $TARGET [$CONFIG]"
-echo "========================================================="
-cmake --build --preset conan-default --config $CONFIG --target $TARGET
+    echo "========================================================="
+    echo " Сборка таргета: $TARGET [$CONFIG]"
+    echo "========================================================="
+    cmake --build "$BUILD_DIR" --config "$CONFIG" --target "$TARGET"
+done
 
-# Если пересобирали тесты, сразу запускаем их через корректный пресет CTest
+# Если пересобирали тесты, сразу запускаем их через CTest в папке сборки
 if [ "$COMPONENT" == "tests" ]; then
     echo "========================================================="
-    echo " Запуск модульных тестов через Google Test..."
+    echo " Запуск всех модульных тестов через Google Test..."
     echo "========================================================="
-    # Переводим имя конфигурации в нижний регистр для пресета ctest (conan-debug / conan-release)
-    TEST_PRESET="conan-$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')"
-    ctest --preset $TEST_PRESET --output-on-failure
+    cd "$BUILD_DIR"
+    ctest -C "$CONFIG" --output-on-failure
+    cd ../..
 fi
 
-echo "Успешно завершено! Бинарник находится в out/$CONFIG/"
+echo "Успешно завершено! Бинарники находятся в out/$CONFIG/"
