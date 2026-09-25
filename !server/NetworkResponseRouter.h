@@ -1,8 +1,9 @@
 #pragma once
-#include "NetworkEvents.h"
+#include <functional>
 #include <memory>
 #include <vector>
-#include <functional>
+
+#include "NetworkEvents.h"
 
 class EventBus;
 
@@ -58,7 +59,8 @@ public:
 
 private:
     /**
-     * @brief Подписывает методы класса на события NetworkMessageEvent, ClientConnectedEvent, ClientDisconnectedEvent в EventBus.
+     * @brief Подписывает методы класса на события NetworkMessageEvent, ClientConnectedEvent, ClientDisconnectedEvent в
+     * EventBus.
      * @details Взаимодействует с полем: event_bus_.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
@@ -89,6 +91,6 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    EventBus& event_bus_;            ///< Шина событий
-    MessageHandler message_handler_; ///< Колбэк передатчик пакетов во внешние системы
+    EventBus& event_bus_;             ///< Шина событий
+    MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
 };
