@@ -1,6 +1,6 @@
 #pragma once
 
-class GameSnapshot{
-    private:
-    public:
+class GameSnapshot {
+private:
+public:
 };
