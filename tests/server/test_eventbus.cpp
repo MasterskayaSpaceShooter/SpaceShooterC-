@@ -1,7 +1,6 @@
 #include <event_bus.h>
 #include <gtest/gtest.h>
 
-
 struct EventA : public events::Event {
     int value = 10;
 };
@@ -15,9 +14,9 @@ TEST(EventBusTest, PublishedEventA_DosNotTriger_EventB) {
 
     bool b_events_callback = false;
 
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&){
+    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
         b_events_callback = true;
-    }); 
+    });
 
     event_bus->publish(EventA{});
 
@@ -30,7 +29,7 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
 
     bool b_events_callback = false;
 
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&){
+    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
         b_events_callback = true;
     });
 
