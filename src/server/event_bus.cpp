@@ -15,4 +15,8 @@ namespace events {
 struct Event {
     virtual ~Event() = default;
 };
+<<<<<<< HEAD
 }  // namespace events
+=======
+}
+>>>>>>> 75b5c39 (update event_bus.h make struct Event and CMake config for test)
