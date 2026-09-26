@@ -13,3 +13,10 @@ target_sources(common PRIVATE
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
+
+# Winsock нужен только на Windows (Boost.Asio на Windows требует ws2_32).
+# PUBLIC — зависимость транзитивная: server_app, client_app и все тесты,
+# линкующие common, получат ws2_32 автоматически.
+if(WIN32)
+    target_link_libraries(common PUBLIC ws2_32)
+endif()
