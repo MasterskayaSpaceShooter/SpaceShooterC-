@@ -1,14 +1,14 @@
 # Автономная и кроссплатформенная конфигурация
 
-Она работает идентично на Windows, Linux и macOS. Менеджер пакетов Conan сам скачает компилятор/сборщик Ninja, библиотеку Boost целиком, а также тестовый фреймворк Google Test. Фиксирует версии пакетов для всех участников разработки. Скомпилированные таргеты компилируются и собираются в папку `./out`.
+Она работает идентично на Windows, Linux и macOS. Менеджер пакетов Conan сам скачает компилятор/сборщик Ninja, библиотеку Boost целиком, а также тестовый фреймворк Google Test. Фиксирует версии пакетов для всех участников разработки. Исполняемые файлы и библиотеки собираются в папку `./out`.
 
 ## Установка
 
 Установку производим из корневой директории проекта.
 
-### 1. Для разработки исользуем менеджер пакетов Conan 2.32
+### 1. Менеджер пакетов Conan 2.32
 
-- Установка под WIndows.
+- Установка под Windows.
 
 ```bash
 winget install Conan.Conan --version 2.32.0
@@ -44,6 +44,10 @@ rm -f CMakePresets.json
 rm -f CMakeUserPresets.json
 ```
 
+`build/` и `out/` — артефакты сборок; `CMakeUserPresets.json` — единый файл
+пресетов, который автоматически пересоздаётся на шаге 4, поэтому его удаление
+безопасно.
+
 ### 4. Атомарная установка зависимостей Конана для режимов DEBUG и RELEASE
 
 ВНИМАНИЕ: установку нужно выполнять ПО ОТДЕЛЬНОСТИ для каждой конфигурации —
@@ -56,6 +60,12 @@ conan install . --build=missing -s:a build_type=Release
 
 Каждая конфигурация получит собственную папку генераторов:
 `build/Debug/generators` и `build/Release/generators`.
+
+Обе команды дополняют ЕДИНЫЙ корневой файл пресетов `CMakeUserPresets.json`:
+Conan добавляет в него include своей конфигурации и вычищает записи удалённых
+папок. Порядок установки не важен, повторные запуски идемпотентны — дубликаты
+включаемых путей не появляются. После изменения `conanfile.py` достаточно
+повторно выполнить эти две команды: тулчейны и пресеты обновятся автоматически.
 
 ### 5. Активация виртуального окружения Conan (Чтобы ОС увидела внутренний Ninja)
 
@@ -71,58 +81,62 @@ conan install . --build=missing -s:a build_type=Release
 source build/Release/generators/conanbuild.sh
 ```
 
-### 6. Конфигурирование проекта через CMake (по конфигурациям)
+### 6. Сборка проекта скриптами (конфигурации и тесты)
 
-Каждая конфигурация использует СОБСТВЕННУЮ папку сборки со своим тулчейном Конана:
-`build/Debug` и `build/Release`. Скрипты `build.sh` / `build.ps1` делают это
-автоматически; вручную:
+Проект конфигурируется и собирается скриптами [`build.sh`](build.sh)
+(Linux/macOS) и [`build.ps1`](build.ps1) (Windows). Скрипт автоматически:
 
-```bash
-cmake -B build/Debug  -G "Ninja Multi-Config" -DCMAKE_TOOLCHAIN_FILE=build/Debug/generators/conan_toolchain.cmake
-cmake -B build/Release -G "Ninja Multi-Config" -DCMAKE_TOOLCHAIN_FILE=build/Release/generators/conan_toolchain.cmake
-```
+- активирует окружение Conan нужной конфигурации (внутренний Ninja);
+- конфигурирует проект через пресет `<config>-default`, если `CMakeCache.txt`
+  в `build/<Config>/` ещё нет (однократно);
+- очищает и собирает указанные таргеты;
+- для `tests` дополнительно запускает все модульные тесты через CTest.
 
-Почему нельзя конфигурировать один раз в общую папку `build/`: Conan раскладывает
-данные зависимостей (GTest и др.) по конфигурациям, и для корректных include/линк
-путей CMake должен читать генераторы именно своей конфигурации.
+Команды для каждого компонента (сервер, клиент, тесты) и каждой конфигурации
+(Debug, Release):
 
-### 7. Раздельная компиляция таргетов (Сервер, Клиент, Тесты)
-
-```bash
-# Сборка СЕРВЕРА (Debug)
-cmake --build build/Debug --config Debug --target server_app
-
-# Сборка КЛИЕНТА (Release)
-cmake --build build/Release --config Release --target client_app
-
-# Сборка и запуск ТЕСТОВ (проще через скрипт — он сам конфигурирует, собирает и гоняет CTest)
-./build.sh tests Debug
-```
-
-### 8. Запуск тестов через CTest
+- Для Linux / macOS
 
 ```bash
-cd build/Debug && ctest -C Debug --output-on-failure
-cd build/Release && ctest -C Release --output-on-failure
+./build.sh server Debug      # Сборка сервера (Debug)
+./build.sh server Release    # Сборка сервера (Release)
+./build.sh client Debug      # Сборка клиента (Debug)
+./build.sh client Release    # Сборка клиента (Release)
+./build.sh tests Debug       # Сборка и запуск тестов (Debug)
+./build.sh tests Release     # Сборка и запуск тестов (Release)
 ```
 
-## Запуск сборок
+- Для Windows (PowerShell)
 
-Запуск осуществляется путём запуска соответствующих скриптов.
-
-- Для Windows
-
-```bash
-# Собрать клиент в релиз
-./build.ps1 -Component client -Config Release
+```powershell
+.\build.ps1 -Component server -Config Debug    # Сборка сервера (Debug)
+.\build.ps1 -Component server -Config Release  # Сборка сервера (Release)
+.\build.ps1 -Component client -Config Debug    # Сборка клиента (Debug)
+.\build.ps1 -Component client -Config Release  # Сборка клиента (Release)
+.\build.ps1 -Component tests -Config Debug     # Сборка и запуск тестов (Debug)
+.\build.ps1 -Component tests -Config Release   # Сборка и запуск тестов (Release)
 ```
 
-- Для Linux/Mac
+Собранные исполняемые файлы и библиотеки попадают в `out/<Config>/`
+(`out/Debug/`, `out/Release/`).
 
-```bash
-# Собрать сервер для отладки
-./build.sh server Debug
-
-# Собрать и прогнать юнит-тесты
-./build.sh tests Debug
-```
+> **Примечание. Конфигурирование и сборка вручную (без скриптов).**
+>
+> Скрипты лишь оборачивают обычные команды CMake. Пресеты `debug-default` /
+> `release-default` генерирует Conan на шаге 4 в едином корневом файле
+> `CMakeUserPresets.json`; каждый пресет сам задаёт генератор Ninja Multi-Config,
+> бинарную папку `build/<Config>` и тулчейн
+> `build/<Config>/generators/conan_toolchain.cmake`. Вручную это делается так:
+>
+> ```bash
+> cmake --preset debug-default      # Конфигурирование build/Debug
+> cmake --preset release-default    # Конфигурирование build/Release
+> cmake --build build/Debug --config Debug --target server_app
+> cmake --build build/Release --config Release --target client_app
+> ```
+>
+> Пресеты появляются только ПОСЛЕ `conan install` (шаг 4): на свежем клоне
+> сначала выполните установку зависимостей, иначе `cmake --preset` сообщит,
+> что пресет не найден. Проверить доступные пресеты можно командой
+> `cmake --list-presets`. IDE (VS Code, CLion, Visual Studio) подхватывают
+> `CMakeUserPresets.json` автоматически при открытии корня проекта.

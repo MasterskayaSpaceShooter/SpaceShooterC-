@@ -25,7 +25,18 @@ class NetworkProjectRecipe(ConanFile):
         tc.generator = "Ninja Multi-Config"
 
         bt = str(self.settings.build_type).lower()
-        tc.user_presets_path = f"ConanPresets-{bt}.json"
+        # Уникальные имена пресетов для каждой конфигурации. Conan по умолчанию
+        # генерирует в обоих файлах конфигур-пресет 'conan-default', а CMake
+        # падает с ошибкой 'Duplicate preset' при слиянии пресетов. Префикс даёт
+        # имена debug-default / release-default и устраняет конфликт.
+        tc.presets_prefix = bt
+        # Сгенерированный CMakePresets.json подключается из корневого
+        # CMakeUserPresets.json, а относительные пути (toolchainFile) CMake
+        # резолвит относительно корня проекта — нужны абсолютные пути.
+        tc.absolute_paths = True
+        # user_presets_path оставлен по умолчанию ("CMakeUserPresets.json"):
+        # Conan 2.32 сам добавляет include текущей конфигурации в единый
+        # корневой файл, объединяя Debug и Release (удалённые папки вычищает).
 
         tc.generate()
 

@@ -35,6 +35,10 @@ fi
 BUILD_DIR="build/$CONFIG"
 GENERATORS_DIR="$BUILD_DIR/generators"
 
+# Имя пресета конфигурирования из единого корневого CMakeUserPresets.json,
+# который собирает Conan: debug-default / release-default
+PRESET_NAME="$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')-default"
+
 echo "========================================================="
 echo " Настройка окружения Conan [$CONFIG]..."
 echo "========================================================="
@@ -47,13 +51,12 @@ else
     exit 1
 fi
 
-# Однократная конфигурация CMake для данной конфигурации.
-# Тулчейн Конана сам добавляет свою папку генераторов в CMAKE_PREFIX_PATH.
+# Однократная конфигурация CMake через единый пресет Конана.
+# Пресет сам задаёт генератор Ninja Multi-Config, бинарную папку build/<Config>
+# и тулчейн build/<Config>/generators/conan_toolchain.cmake.
 if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
-    echo "Конфигурация CMake [$CONFIG]..."
-    cmake -B "$BUILD_DIR" \
-          -G "Ninja Multi-Config" \
-          -DCMAKE_TOOLCHAIN_FILE="$GENERATORS_DIR/conan_toolchain.cmake"
+    echo "Конфигурация CMake [$CONFIG] через пресет '$PRESET_NAME'..."
+    cmake --preset "$PRESET_NAME"
 fi
 
 # В цикле очищаем и собираем каждый таргет через нативные команды Ninja

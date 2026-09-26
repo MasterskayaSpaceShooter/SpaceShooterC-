@@ -25,6 +25,10 @@ switch ($Component) {
 $BuildDir = "build/$Config"
 $GeneratorsDir = "$BuildDir/generators"
 
+# Имя пресета конфигурирования из единого корневого CMakeUserPresets.json,
+# который собирает Conan: debug-default / release-default
+$PresetName = "$($Config.ToLower())-default"
+
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host " Настройка окружения Conan [$Config]..."
 Write-Host "=========================================================" -ForegroundColor Cyan
@@ -40,8 +44,8 @@ if (Test-Path $ConanEnvScript) {
 
 # Однократная конфигурация CMake через тулчейн Конана данной конфигурации
 if (-not (Test-Path "$BuildDir/CMakeCache.txt")) {
-    Write-Host "Конфигурация CMake [$Config]..." -ForegroundColor Yellow
-    cmake -B $BuildDir -G "Ninja Multi-Config" -DCMAKE_TOOLCHAIN_FILE="$GeneratorsDir/conan_toolchain.cmake"
+    Write-Host "Конфигурация CMake [$Config] через пресет '$PresetName'..." -ForegroundColor Yellow
+    cmake --preset $PresetName
 }
 
 # Проходим циклом по всем целям (для раздельной очистки и сборки)
