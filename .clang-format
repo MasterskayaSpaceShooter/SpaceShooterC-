@@ -55,3 +55,6 @@ IncludeCategories:
     Priority: 1
   - Regex: '^".*"$'
     Priority: 2
+
+# Trailing newline at the end of each file
+InsertNewlineAtEOF: true
