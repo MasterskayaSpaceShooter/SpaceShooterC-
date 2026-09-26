@@ -1,7 +1,7 @@
 #pragma once
 #include <boost/asio.hpp>
-#include <vector>
 #include <thread>
+#include <vector>
 
 /**
  * @brief Менеджер потокового контекста ввода-вывода (Boost.Asio Execution Context).
@@ -21,7 +21,8 @@ public:
 
     /**
      * @brief Деструктор сетевого контекста.
-     * @details Взаимодействует с членами класса: автоматически вызывает метод stop() для корректного завершения потоков.
+     * @details Взаимодействует с членами класса: автоматически вызывает метод stop() для корректного завершения
+     * потоков.
      */
     ~NetworkContext();
 
@@ -50,11 +51,14 @@ public:
      * @inputs Входных параметров нет.
      * @return boost::asio::io_context& Ссылка на используемый контекст событий.
      */
-    [[nodiscard]] boost::asio::io_context& getContext() noexcept { return io_context_; }
+    [[nodiscard]] boost::asio::io_context& getContext() noexcept {
+        return io_context_;
+    }
 
 private:
-    boost::asio::io_context io_context_;                                           ///< Главный контекст событий Asio
-    boost::asio::executor_work_guard<boost::asio::io_context::executor_type> work_guard_; ///< Защитник от пустой остановки run()
-    std::vector<std::jthread> worker_threads_;                                     ///< Пул рабочих потоков
-    size_t thread_count_;                                                          ///< Целевое количество потоков
+    boost::asio::io_context io_context_;  ///< Главный контекст событий Asio
+    boost::asio::executor_work_guard<boost::asio::io_context::executor_type>
+        work_guard_;                            ///< Защитник от пустой остановки run()
+    std::vector<std::jthread> worker_threads_;  ///< Пул рабочих потоков
+    size_t thread_count_;                       ///< Целевое количество потоков
 };
