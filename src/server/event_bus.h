@@ -29,6 +29,14 @@ struct Event {
 }  // namespace events
 namespace events {
 
+// Заглушка базового события
+struct Event {
+    virtual ~Event() = default;
+};
+}  // namespace events
+
+namespace events {
+
 /**
  * @brief Генератор уникальных идентификаторов для типов событий.
  *
