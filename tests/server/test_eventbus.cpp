@@ -1,4 +1,3 @@
-#include <event_bus.h>
 #include <gtest/gtest.h>
 
 #include "event_bus.h"
