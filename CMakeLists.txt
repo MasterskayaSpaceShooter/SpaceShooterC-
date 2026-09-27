@@ -10,7 +10,6 @@ endif()
 # Экспорт compile_commands.json для корректной работы IntelliSense в IDE
 # (VS Code C/C++, clangd и пр.): редактор получит include-пути Boost/GTest из Conan
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
