@@ -1,30 +1,26 @@
 #pragma once
+
 #include <boost/asio.hpp>
-#include <string>
+#include <chrono>
+#include <filesystem>
 #include <format>
 #include <iostream>
-#include <chrono>
-#include <thread>
 #include <memory>
-#include <filesystem>
+#include <string>
+#include <thread>
 
 /**
  * @brief Уровень логирования.
  */
-enum class LogLevel {
-    DEBUG,
-    INFO,
-    WARN,
-    ERROR
-};
+enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 /**
  * @brief Структура, содержащая метаданные о месте вызова лога в исходном коде.
  */
 struct SourceLocation {
-    const char* file{""};     ///< Имя файла (__FILE__)
-    int line{0};             ///< Номер строки (__LINE__)
-    const char* function{""}; ///< Имя функции (__FUNCTION__)
+    const char* file{""};      ///< Имя файла (__FILE__)
+    int line{0};               ///< Номер строки (__LINE__)
+    const char* function{""};  ///< Имя функции (__FUNCTION__)
 };
 
 /**
@@ -57,8 +53,7 @@ public:
      */
     void init(boost::asio::io_context& io_context) {
         strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
-            boost::asio::make_strand(io_context)
-        );
+            boost::asio::make_strand(io_context));
     }
 
     /**
@@ -99,12 +94,10 @@ private:
                         std::thread::id thread_id,
                         LogLevel level,
                         const SourceLocation& loc,
-                        const std::string& message)
-    {
+                        const std::string& message) {
         // Время: HH:MM:SS.mmm
         auto time_c = std::chrono::system_clock::to_time_t(timestamp);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      timestamp.time_since_epoch()) % 1000;
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
         std::tm tm_buf{};
 #if defined(_WIN32)
@@ -113,15 +106,23 @@ private:
         localtime_r(&time_c, &tm_buf);
 #endif
 
-        std::string time_str = std::format("{:02}:{:02}:{:02}.{:03}",
-                                           tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms.count());
+        std::string time_str =
+            std::format("{:02}:{:02}:{:02}.{:03}", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms.count());
 
         std::string level_str;
         switch (level) {
-            case LogLevel::DEBUG: level_str = "DEBUG"; break;
-            case LogLevel::INFO:  level_str = "INFO "; break;
-            case LogLevel::WARN:  level_str = "WARN "; break;
-            case LogLevel::ERROR: level_str = "ERROR"; break;
+            case LogLevel::DEBUG:
+                level_str = "DEBUG";
+                break;
+            case LogLevel::INFO:
+                level_str = "INFO ";
+                break;
+            case LogLevel::WARN:
+                level_str = "WARN ";
+                break;
+            case LogLevel::ERROR:
+                level_str = "ERROR";
+                break;
         }
 
         // Извлекаем только имя файла из полного пути (например, "src/network/Session.cpp" -> "Session.cpp")
@@ -152,20 +153,19 @@ private:
 // ============================================================================
 
 /// Вспомогательный макрос сборки SourceLocation
-#define LOG_SOURCE_LOC SourceLocation{__FILE__, __LINE__, __FUNCTION__}
+#define LOG_SOURCE_LOC                   \
+    SourceLocation {                     \
+        __FILE__, __LINE__, __FUNCTION__ \
+    }
 
 /// Логирование уровня INFO
-#define LOG_INFO(fmt, ...) \
-    Logger::getInstance().log(LogLevel::INFO, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_INFO(fmt, ...) Logger::getInstance().log(LogLevel::INFO, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
 
 /// Логирование уровня ERROR
-#define LOG_ERROR(fmt, ...) \
-    Logger::getInstance().log(LogLevel::ERROR, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_ERROR(fmt, ...) Logger::getInstance().log(LogLevel::ERROR, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
 
 /// Логирование уровня WARN
-#define LOG_WARN(fmt, ...) \
-    Logger::getInstance().log(LogLevel::WARN, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_WARN(fmt, ...) Logger::getInstance().log(LogLevel::WARN, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
 
 /// Логирование уровня DEBUG
-#define LOG_DEBUG(fmt, ...) \
-    Logger::getInstance().log(LogLevel::DEBUG, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_DEBUG(fmt, ...) Logger::getInstance().log(LogLevel::DEBUG, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
