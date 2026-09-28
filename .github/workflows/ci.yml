@@ -13,11 +13,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  clang-format:
-    name: Check code style
+  clang-format_build-and-test:
+    name: Check code style, Build and Test project
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
     steps:
-      - name: Checkout code
+      - name: Check code, Build and Test
         uses: actions/checkout@v4
 
       - name: Verify .clang-format exists
@@ -44,14 +46,6 @@ jobs:
           -name '*.c' \
           \) \
           -exec clang-format --dry-run --Werror --style=file {} +
-
-  build-and-test:
-    name: Build and Test project
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Install Conan
         run: pipx install "conan>=2,<3"
