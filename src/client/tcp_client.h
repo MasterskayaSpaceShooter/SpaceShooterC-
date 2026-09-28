@@ -1,10 +1,10 @@
 #pragma once
 #include <boost/asio.hpp>
-#include <memory>
-#include <vector>
-#include <queue>
-#include <mutex>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <vector>
 
 class FrameCodec;
 
@@ -68,7 +68,9 @@ public:
      * @param cb Входные данные: Функция вида void(const vector<uint8_t>&).
      * @outputs Выходных значений нет.
      */
-    void setMessageCallback(MessageCallback cb) { message_cb_ = std::move(cb); }
+    void setMessageCallback(MessageCallback cb) {
+        message_cb_ = std::move(cb);
+    }
 
     /**
      * @brief Устанавливает колбэк на событие разрыва соединения.
@@ -76,7 +78,9 @@ public:
      * @param cb Входные данные: Функция вида void().
      * @outputs Выходных значений нет.
      */
-    void setDisconnectCallback(DisconnectCallback cb) { disconnect_cb_ = std::move(cb); }
+    void setDisconnectCallback(DisconnectCallback cb) {
+        disconnect_cb_ = std::move(cb);
+    }
 
     /**
      * @brief Возвращает флаг текущего состояния подключения.
@@ -85,7 +89,9 @@ public:
      * @return true Если сокет открыт и активен.
      * @return false Если клиент отключен.
      */
-    [[nodiscard]] bool isConnected() const noexcept { return is_connected_; }
+    [[nodiscard]] bool isConnected() const noexcept {
+        return is_connected_;
+    }
 
 private:
     /**
@@ -104,17 +110,17 @@ private:
      */
     void doWrite();
 
-    boost::asio::ip::tcp::socket socket_;           ///< TCP-сокет клиента
-    FrameCodec& codec_;                             ///< Кодек протокола
+    boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет клиента
+    FrameCodec& codec_;                    ///< Кодек протокола
 
-    bool is_connected_{false};                      ///< Флаг подключения
-    std::vector<uint8_t> read_buffer_;              ///< Временный буфер чтения
+    bool is_connected_{false};          ///< Флаг подключения
+    std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
     static constexpr size_t READ_BLOCK_SIZE = 4096;
 
     std::mutex write_mutex_;                        ///< Мьютекс очереди отправки
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь кадра на отправку
     bool is_writing_{false};                        ///< Флаг активной записи
 
-    MessageCallback message_cb_;                    ///< Обработчик входящего кадра
-    DisconnectCallback disconnect_cb_;              ///< Обработчик отключения
+    MessageCallback message_cb_;        ///< Обработчик входящего кадра
+    DisconnectCallback disconnect_cb_;  ///< Обработчик отключения
 };

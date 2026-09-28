@@ -1,8 +1,6 @@
 #pragma once
 
-class Asteroid {
+class GameSnapshot {
 private:
-
 public:
-
 };
