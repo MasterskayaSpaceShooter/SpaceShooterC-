@@ -142,6 +142,43 @@ struct EventB : public events::Event {
     int value = 20;
 };
 
+struct UserCreatedEvent : public events::Event{
+    int user_id{};
+}
+
+TEST(EventBusTest, CallsAllCallbacksForPublishedEvent){
+    auto eventbus = events::EventBus::create();
+    int first_cb = 0;
+    int second_cb = 0;
+    int third_cb = 0;
+
+    auto connection_first = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
+        ++first_cb;
+        EXPECT_EQ(ucv.user_id, 42);
+    });
+
+    auto connection_second = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
+        ++second_cb;
+        EXPECT_EQ(ucv.user_id, 42);
+    });
+
+    auto connection_third = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
+        ++third_cb;
+        EXPECT_EQ(ucv.user_id, 42);
+    });
+
+    UserCreatedEvent ucv{.user_id = 42};
+    eventbus->publish(ucv);
+
+    EXPECT_EQ(first_cb, 1);
+    EXPECT_EQ(second_cb, 1);
+    EXPECT_EQ(third_cb, 1);
+
+    EXPECT_TRUE(connection_first.connected());
+    EXPECT_TRUE(connection_second.connected());
+    EXPECT_TRUE(connection_third.connected());
+}
+
 TEST(EventBusTest, PublishedEventA_DosNotTriger_EventB) {
     auto event_bus = events::EventBus::create();
 
