@@ -1,5 +1,8 @@
+#include <atomic>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <thread>
+#include <vector>
 
 // МОК ЛОГЕРА
 
@@ -127,47 +130,34 @@ TEST(EventBusTest, ScopedConnection) {
 }
 }  // namespace anns_tests
 
-// Код Макса
-/*
-
-#include <gtest/gtest.h>
-
-#include "event_bus.h"
-
-struct EventA : public events::Event {
-    int value = 10;
-};
-
-struct EventB : public events::Event {
-    int value = 20;
-};
-
-TEST(EventBusTest, PublishedEventA_DosNotTriger_EventB) {
+namespace violetta_tests {
+TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
     auto event_bus = events::EventBus::create();
 
-    bool b_events_callback = false;
+    std::atomic<int> callback_count{0};
 
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
-        b_events_callback = true;
-    });
+    constexpr int subscriber_count = 4;
+    constexpr int publisher_count = 4;
+    constexpr int operations_per_thread = 1000;
 
-    event_bus->publish(EventA{});
+    std::vector<std::jthread> threads;
 
-    EXPECT_FALSE(b_events_callback);
+    for (int i = 0; i < subscriber_count; ++i) {
+        threads.emplace_back([&] {
+            for (int j = 0; j < operations_per_thread; ++j) {
+                (void)event_bus->subscribe<events::Event>([&](const events::Event&) {
+                    ++callback_count;
+                });
+            }
+        });
+    }
+
+    for (int i = 0; i < publisher_count; ++i) {
+        threads.emplace_back([&] {
+            for (int j = 0; j < operations_per_thread; ++j) {
+                event_bus->publish(events::Event{});
+            }
+        });
+    }
 }
-
-// Дополнительный тест для события типа Б
-TEST(EventBusTest, PublishedEventB_Triger_EventB) {
-    auto event_bus = events::EventBus::create();
-
-    bool b_events_callback = false;
-
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
-        b_events_callback = true;
-    });
-
-    event_bus->publish(EventB{});
-
-    EXPECT_TRUE(b_events_callback);
-}
-*/
+}  // namespace violetta_tests
