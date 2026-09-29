@@ -1,4 +1,4 @@
-add_executable(unit_tests_server  tests_eventbus.cpp) # Путь без префикса src/
+add_executable(unit_tests_server  test_eventbus.cpp) # Путь без префикса src/
 
 target_include_directories(unit_tests_server PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 
