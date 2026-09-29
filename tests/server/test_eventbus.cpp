@@ -142,41 +142,32 @@ struct EventB : public events::Event {
     int value = 20;
 };
 
-struct UserCreatedEvent : public events::Event{
-    int user_id{};
-}
-
 TEST(EventBusTest, CallsAllCallbacksForPublishedEvent){
+    struct UserCreatedEvent : public events::Event {
+        int user_id{};
+    };
+
+    constexpr int user_id = 42;
     auto eventbus = events::EventBus::create();
-    int first_cb = 0;
-    int second_cb = 0;
-    int third_cb = 0;
+    int cb_counter = 0;
 
-    auto connection_first = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
-        ++first_cb;
+    auto cb = [&](const UserCreatedEvent& ucv){
+        ++cb_counter;
         EXPECT_EQ(ucv.user_id, 42);
-    });
+    };
 
-    auto connection_second = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
-        ++second_cb;
-        EXPECT_EQ(ucv.user_id, 42);
-    });
+    auto conn1 = eventbus->subscribe<UserCreatedEvent>(cb);
+    auto conn2 = eventbus->subscribe<UserCreatedEvent>(cb);
+    auto conn3 = eventbus->subscribe<UserCreatedEvent>(cb);
 
-    auto connection_third = eventbus->subscribe<UserCreatedEvent>([&](const UserCreatedEvent& ucv){
-        ++third_cb;
-        EXPECT_EQ(ucv.user_id, 42);
-    });
-
-    UserCreatedEvent ucv{.user_id = 42};
+    UserCreatedEvent ucv{.user_id = user_id};
     eventbus->publish(ucv);
 
-    EXPECT_EQ(first_cb, 1);
-    EXPECT_EQ(second_cb, 1);
-    EXPECT_EQ(third_cb, 1);
+    EXPECT_EQ(cb_counter, 3);
 
-    EXPECT_TRUE(connection_first.connected());
-    EXPECT_TRUE(connection_second.connected());
-    EXPECT_TRUE(connection_third.connected());
+    EXPECT_TRUE(conn1.connected());
+    EXPECT_TRUE(conn2.connected());
+    EXPECT_TRUE(conn3.connected());
 }
 
 TEST(EventBusTest, PublishedEventA_DosNotTriger_EventB) {
