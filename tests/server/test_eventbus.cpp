@@ -153,7 +153,7 @@ TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
 
     auto cb = [&](const UserCreatedEvent& ucv) {
         ++cb_counter;
-        EXPECT_EQ(ucv.user_id, user_id );
+        EXPECT_EQ(ucv.user_id, user_id);
     };
 
     auto conn1 = eventbus->subscribe<UserCreatedEvent>(cb);
