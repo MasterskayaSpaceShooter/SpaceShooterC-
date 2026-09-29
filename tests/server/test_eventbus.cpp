@@ -127,9 +127,6 @@ TEST(EventBusTest, ScopedConnection) {
 }
 }  // namespace anns_tests
 
-// Код Макса
-/*
-
 #include <gtest/gtest.h>
 
 #include "event_bus.h"
@@ -199,4 +196,3 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
 
     EXPECT_TRUE(b_events_callback);
 }
-*/
