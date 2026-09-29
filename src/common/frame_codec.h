@@ -3,6 +3,7 @@
 #include <array>
 #include <boost/asio/buffer.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
+#include <boost/endian/conversion.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -30,9 +31,9 @@ using PayloadView = std::span<const std::uint8_t>;
  *
  * Both header fields are 32-bit unsigned integers transmitted in
  * **network byte order** (big-endian), independent of host endianness.
- * On the sender side they are produced with @c htonl; on the receiver
- * side they are read with @c ntohl. The payload is a raw byte sequence
- * and is never byte-swapped.
+ * On the sender side they are produced with @c boost::endian::native_to_big;
+ * on the receiver side they are read with @c boost::endian::big_to_native.
+ * The payload is a raw byte sequence and is never byte-swapped.
  *
  * @par Encode contract
  * @ref encode takes a payload vector by value, moves it into a
@@ -133,7 +134,7 @@ public:
      * @brief Wrap @p payload in a frame ready to send.
      *
      * The header (magic + length) is serialized in network byte order
-     * via @c htonl. The payload is moved, not copied.
+     * via @c boost::endian::native_to_big. The payload is moved, not copied.
      *
      * @param payload Payload bytes. Moved into the frame.
      * @return Frame owning header and payload.
