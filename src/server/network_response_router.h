@@ -3,9 +3,8 @@
 #include <memory>
 #include <vector>
 
-#include "NetworkEvents.h"
-
-class EventBus;
+#include "event_bus.h"
+#include "network_events.h"
 
 /**
  * @brief Маршрутизатор и точка управления ВСЕМИ сетевыми событиями.
@@ -24,13 +23,20 @@ public:
      * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
      * @param event_bus Входные данные: Ссылка на шину событий.
      */
-    explicit NetworkResponseRouter(EventBus& event_bus) {};
+    explicit NetworkResponseRouter(EventBus& event_bus) : event_bus_(event_bus) {
+        setupSubscriptions();
+    }
 
     /**
      * @brief Деструктор маршрутизатора.
      * @details Освобождает подписки и ресурсы.
      */
-    ~NetworkResponseRouter() {};
+    ~NetworkResponseRouter() {
+        // Отключаем все подписки на события шины
+        for (auto& connection : subscriptions_) {
+            connection.disconnect();
+        }
+    }
 
     /**
      * @brief Регистрирует внешний обработчик входящих декодированных кадров.
@@ -38,7 +44,9 @@ public:
      * @param handler Входные данные: Функция-колбэк вида void(SessionId, vector<uint8_t>).
      * @outputs Выходных значений нет.
      */
-    void setMessageHandler(MessageHandler handler) {};
+    void setMessageHandler(MessageHandler handler) {
+        message_handler_ = std::move(handler);
+    }
 
     /**
      * @brief Формирует и публикует событие отправки пакета конкретному клиенту.
@@ -65,7 +73,21 @@ private:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void setupSubscriptions() {};
+    void setupSubscriptions() {
+        subscriptions_.emplace_back(event_bus_.subscribe<NetworkMessageEvent>([this](const NetworkMessageEvent& event) {
+            onMessageReceived(event);
+        }));
+
+        subscriptions_.emplace_back(
+            event_bus_.subscribe<ClientConnectedEvent>([this](const ClientConnectedEvent& event) {
+                onClientConnected(event);
+            }));
+
+        subscriptions_.emplace_back(
+            event_bus_.subscribe<ClientDisconnectedEvent>([this](const ClientDisconnectedEvent& event) {
+                onClientDisconnected(event);
+            }));
+    }
 
     /**
      * @brief Внутренний обработчик прихода входящего кадра от клиента.
@@ -73,7 +95,11 @@ private:
      * @param event Входные данные: Структура события NetworkMessageEvent.
      * @outputs Выходных значений нет.
      */
-    void onMessageReceived(const NetworkMessageEvent& event) {};
+    void onMessageReceived(const NetworkMessageEvent& event) {
+        if (message_handler_) {
+            message_handler_(event.session_id, event.payload);
+        }
+    }
 
     /**
      * @brief Внутренний обработчик события подключения нового клиента.
@@ -91,6 +117,7 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event) {};
 
-    EventBus& event_bus_;             ///< Шина событий
-    MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
+    EventBus& event_bus_;                                     ///< Шина событий
+    MessageHandler message_handler_;                          ///< Колбэк передатчик пакетов во внешние системы
+    std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
 };

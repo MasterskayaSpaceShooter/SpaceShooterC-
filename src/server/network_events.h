@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "event_bus.h"
+
 /// Уникальный идентификатор сетевого соединения (сессии)
 using SessionId = uint64_t;
 
@@ -10,7 +12,7 @@ using SessionId = uint64_t;
  * @brief Абстрактное базовое сетевое событие.
  * @details Зона ответственности: Единый базовый тип для всех сетевых уведомлений в EventBus.
  */
-struct NetworkEvent {
+struct NetworkEvent : public events::Event {
     SessionId session_id{0};  ///< ID сессии (0 используется как маркер для Broadcast)
 
     /**
