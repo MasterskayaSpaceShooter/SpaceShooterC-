@@ -65,10 +65,10 @@ private:
      */
     void doAccept() {}
 
-    net::io_context& ioc_; ///< Контекст событий Asio
-    tcp::acceptor acceptor_; ///< Акцептор TCP-соединений Asio
-    events::EventBus& event_bus_; ///< Шина событий
-    network::FrameCodec& codec_; ///< Кодек протокола
-    SessionRegistry session_registry_; ///< Реестр сессий клиентов
-    std::atomic<SessionId> next_session_id_{1}; ///< Счетчик для генерации уникальных SessionId
+    net::io_context& ioc_;                       ///< Контекст событий Asio
+    tcp::acceptor acceptor_;                     ///< Акцептор TCP-соединений Asio
+    events::EventBus& event_bus_;                ///< Шина событий
+    network::FrameCodec& codec_;                 ///< Кодек протокола
+    SessionRegistry session_registry_;           ///< Реестр сессий клиентов
+    std::atomic<SessionId> next_session_id_{1};  ///< Счетчик для генерации уникальных SessionId
 };
