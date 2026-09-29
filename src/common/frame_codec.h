@@ -1,186 +1,175 @@
 #pragma once
 
-#include <algorithm>
-#include <boost/asio.hpp>  // asio::streambuf, asio::buffer, etc.
+#include <array>
+#include <boost/asio/buffer.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>  // std::memcpy
+#include <span>
+#include <stdexcept>
 #include <vector>
 
-#ifdef _WIN32
-#include <winsock2.h>  // htonl / ntohl on Windows
-#else
-#include <arpa/inet.h>  // htonl / ntohl on Unix/Linux
-#endif
-
-#include "logger.h"
-
 namespace network {
+
 /**
- * @brief Utility class for message framing over stream protocols (e.g., TCP).
+ * @brief Non-owning view over payload bytes.
  *
- * Adds a fixed 4‑byte magic number and a 4‑byte length prefix (both big‑endian)
- * before each message, allowing the receiver to:
- * - identify message boundaries,
- * - detect and skip invalid/oversized frames,
- * - resynchronize after corrupted data.
- *
- * @par Frame format
- *   [MAGIC (4 bytes)] [length (4 bytes, network order)] [payload]
- *
- * @par Receiver behaviour
- *   The `extractFrames` method scans the input buffer for the magic number.
- *   When a magic is found, it verifies the length and extracts the complete
- *   payload if available. Invalid frames (e.g., oversized length) are skipped,
- *   and the search continues from the next byte, so valid data after corruption
- *   is not lost.
+ * Valid only inside the callback that received it.
+ * Do not store, capture, or use after the callback returns.
  */
-/* TODO: zero-copy
-- asio::streambuf --> boost::beast::flat_buffer
-- rework without buffer_copy()
-- return std::span instead of vector
-*/
+using PayloadView = std::span<const std::uint8_t>;
+
+/**
+ * @brief Zero-copy framing codec for stream transports (TCP, TLS, pipes).
+ *
+ * @par Wire format
+ * @code
+ *   [magic : 4 bytes]  [length : 4 bytes]  [payload : length bytes]
+ *   network byte order  network byte order  raw bytes
+ * @endcode
+ *
+ * Both header fields are 32-bit unsigned integers transmitted in
+ * **network byte order** (big-endian), independent of host endianness.
+ * On the sender side they are produced with @c htonl; on the receiver
+ * side they are read with @c ntohl. The payload is a raw byte sequence
+ * and is never byte-swapped.
+ *
+ * @par Encode contract
+ * @ref encode takes a payload vector by value, moves it into a
+ * @ref Frame, and prepends an 8-byte header. No payload byte is ever
+ * copied. The returned @c Frame owns the header and the payload and
+ * yields a two-buffer sequence via @ref Frame::buffers for
+ * @c boost::asio::async_write.
+ *
+ * @par Decode contract
+ * @ref decode walks a @c flat_buffer, dispatches every complete frame
+ * through the supplied callback, and **consumes from the buffer every
+ * byte it has processed** — including bytes skipped during
+ * resynchronization. This is required: without consuming, the next
+ * call would re-parse the same frames indefinitely.
+ *
+ * Bytes that do not yet form a complete frame are left in the buffer
+ * for the next call. "Not enough data yet" is a normal outcome, not an
+ * error; @ref decode does not throw for incomplete input.
+ *
+ * The @c PayloadView passed to the callback points directly into the
+ * buffer and is valid **only for the duration of that callback**. The
+ * callback must not read from, write to, or consume the buffer. Any
+ * exception thrown by the callback propagates out of @ref decode
+ * unchanged.
+ *
+ * @par Oversized-frame protection
+ * The payload length is validated against @ref kMaxMessageSize as soon
+ * as the header is parsed, **before** the codec ever waits for
+ * payload bytes. A candidate with an excessive length is rejected and
+ * the parser resynchronizes from the next byte, so a valid frame
+ * following a malformed one is still recovered. This prevents a peer
+ * from forcing the buffer to grow via a single 8-byte
+ * header.
+ *
+ * @par Thread safety
+ * Stateless and thread-safe. A single @c flat_buffer must not be
+ * touched concurrently.
+ *
+ * @par Example
+ * @code
+ * // Send
+ * auto frame = FrameCodec::encode(std::move(bytes));
+ * boost::asio::async_write(sock, frame.buffers(),
+ *     [f = std::move(frame)](auto ec, std::size_t) { ... });
+ *
+ * // Receive (after every async_read)
+ * FrameCodec::decode(read_buffer_, [](PayloadView p) {
+ *     handle(p);   // use p directly; do not store it
+ * });
+ * @endcode
+ */
 class FrameCodec {
+private:
+    // Wire-format constants
+    static constexpr std::uint32_t kMagic = 0xDEADBEEF;
+    static constexpr std::size_t kMagicLength = 4;
+    static constexpr std::size_t kSizeLength = 4;
+    static constexpr std::size_t kHeaderLength = kMagicLength + kSizeLength;
+
 public:
-    /// Maximum allowed payload size
-    static constexpr size_t kMaxMessageSize = 16 * 1024 * 1024;
-
-    /// Magic number used for frame synchronization (network‑order when sent)
-    // TODO: 8 bytes for magic
-    static constexpr uint32_t kMagic = 0xDEADBEEF;
-
-    /// Length of the magic prefix
-    static constexpr size_t kMagicLength = 4;
-
-    /// Length of the size prefix
-    static constexpr size_t kSizePrefixLength = 4;
+    /// Maximum allowed payload size. Applies to encode and decode.
+    static constexpr std::size_t kMaxMessageSize = 16 * 1024 * 1024;
 
     /**
-     * @brief Builds a frame ready for transmission.
+     * @brief Outbound frame: header + payload, ready to send.
      *
-     * @param payload The original data to send.
-     * @return std::vector<uint8_t> Frame with magic + length prefix + payload.
-     *         Returns an empty vector if payload exceeds kMaxMessageSize.
+     * Owns its bytes. Move-only. The only public operation is
+     * @ref buffers.
+     *
+     * @warning The frame must outlive any asynchronous write that
+     *          references its buffers. Keep it in a queue and pop it
+     *          from the write completion handler.
      */
-    static std::vector<uint8_t> encodeFrame(const std::vector<uint8_t>& payload) {
-        if (payload.size() > kMaxMessageSize) {
-            LOG_INFO("[FrameCodec::encodeFrame] payload.size() > kMaxMessageSize");
-            return {};
+    class Frame {
+    public:
+        Frame(const Frame&) = delete;
+        Frame& operator=(const Frame&) = delete;
+        Frame(Frame&&) noexcept = default;
+        Frame& operator=(Frame&&) noexcept = default;
+        ~Frame() = default;
+
+        /// Two-buffer sequence for async_write: [header, payload].
+        [[nodiscard]] std::array<boost::asio::const_buffer, 2> buffers() const noexcept {
+            return {boost::asio::buffer(header_), boost::asio::buffer(payload_)};
         }
 
-        const size_t total_len = kMagicLength + kSizePrefixLength + payload.size();
-        std::vector<uint8_t> frame(total_len);
+    private:
+        friend class FrameCodec;
 
-        // Write magic number in network byte order
-        uint32_t net_magic = htonl(kMagic);
-        std::memcpy(frame.data(), &net_magic, kMagicLength);
+        Frame(std::array<std::uint8_t, kHeaderLength> h, std::vector<std::uint8_t> p) noexcept :
+            header_(h), payload_(std::move(p)) {}
 
-        // Write payload length in network byte order
-        uint32_t net_len = htonl(static_cast<uint32_t>(payload.size()));
-        std::memcpy(frame.data() + kMagicLength, &net_len, kSizePrefixLength);
+        std::array<std::uint8_t, kHeaderLength> header_{};
+        std::vector<std::uint8_t> payload_;
+    };
 
-        // Copy payload
-        if (!payload.empty()) {
-            std::memcpy(frame.data() + kMagicLength + kSizePrefixLength, payload.data(), payload.size());
-        }
-
-        return frame;
+    /**
+     * @brief Wrap @p payload in a frame ready to send.
+     *
+     * The header (magic + length) is serialized in network byte order
+     * via @c htonl. The payload is moved, not copied.
+     *
+     * @param payload Payload bytes. Moved into the frame.
+     * @return Frame owning header and payload.
+     * @throws std::length_error If @p payload.size() >
+     *         @ref kMaxMessageSize.
+     */
+    static Frame encode(std::vector<std::uint8_t>&& payload) {
+        throw std::runtime_error("Under construction!");
     }
 
     /**
-     * @brief Extracts all complete frames from an Asio streambuf.
+     * @brief Dispatch every complete frame found in @p buffer.
      *
-     * The method scans the buffer for the magic number, verifies frame integrity,
-     * and extracts valid payloads. Processed bytes (including any junk data)
-     * are consumed from the streambuf. Incomplete or invalid frames are handled
-     * as follows:
-     * - If a valid frame is found, all bytes up to its end are consumed.
-     * - If no valid frame is found, the method safely discards bytes that
-     *   cannot be part of a magic sequence (keeping the last 3 bytes for
-     *   potential partial magic).
+     * Consumes every byte that belongs to a parsed frame, plus every
+     * byte skipped during resynchronization. Leaves trailing bytes that
+     * do not yet form a complete frame for the next call.
      *
-     * @param buffer Receive buffer (in/out). Data is accumulated between calls.
-     * @return std::vector<std::vector<uint8_t>> Vector of extracted payloads
-     *         (without magic or length prefixes). Each element is a complete message.
+     * Rejects candidates whose length exceeds @ref kMaxMessageSize
+     * before waiting for payload bytes, and continues scanning from
+     * the next byte.
+     *
+     * @param buffer  Receive buffer. Must be contiguous
+     *                (@c boost::beast::flat_buffer). Modified: parsed
+     *                bytes are consumed from it.
+     * @param onFrame Called once per complete payload, in arrival
+     *                order. Must not read from, write to, or consume
+     *                @p buffer. The @ref PayloadView it receives is
+     *                valid only for the duration of the call.
+     * @return Number of frames dispatched.
+     * @throws Any exception thrown by @p onFrame (propagated
+     *         unchanged). Never thrown for incomplete input.
      */
-    static std::vector<std::vector<uint8_t>> extractFrames(boost::asio::streambuf& buffer) {
-        std::vector<std::vector<uint8_t>> messages;
-
-        // Get current buffer size and copy data into a contiguous vector
-        const size_t buf_size = buffer.size();
-        if (buf_size < kMagicLength) {
-            return messages;  // not enough data to even attempt sync
-        }
-
-        // copy into std::vector<uint8_t> for simple index‑based scanning
-        // avoids dealing with Boost.Asio’s scatter‑gather buffer sequence.
-        std::vector<uint8_t> data(buf_size);
-        boost::asio::buffer_copy(boost::asio::buffer(data), buffer.data());
-
-        size_t offset = 0;
-        size_t first_incomplete_magic_offset = buf_size;
-
-        // TODO: optimize (std::search?)
-        while (offset + kMagicLength <= data.size()) {
-            // Check for magic number at current offset
-            uint32_t net_magic;
-            std::memcpy(&net_magic, data.data() + offset, kMagicLength);
-            if (ntohl(net_magic) != kMagic) {
-                ++offset;
-                continue;
-            }
-
-            // Magic found – ensure we have enough data for the length field
-            if (offset + kMagicLength + kSizePrefixLength > data.size()) {
-                // Not enough data for length – cannot decide if this is a valid frame.
-                // Keep everything from this magic onward, discard before it.
-                first_incomplete_magic_offset = offset;
-                break;  // need more data
-            }
-
-            // Read the payload length
-            uint32_t net_len;
-            std::memcpy(&net_len, data.data() + offset + kMagicLength, kSizePrefixLength);
-            const uint32_t payload_len = ntohl(net_len);
-
-            if (payload_len > kMaxMessageSize) {
-                // Invalid length – skip this magic and continue searching
-                ++offset;
-                continue;
-            }
-
-            const size_t total_len = kMagicLength + kSizePrefixLength + payload_len;
-            if (offset + total_len > data.size()) {
-                // Valid magic+length, but payload is incomplete.
-                // Keep everything from this magic onward, discard before it.
-                first_incomplete_magic_offset = offset;
-                break;  // incomplete frame – wait for more data
-            }
-
-            // Complete frame - extract the payload (skip magic and length)
-            messages.emplace_back(data.begin() + offset + kMagicLength + kSizePrefixLength,
-                                  data.begin() + offset + total_len);
-
-            // Move past this frame and continue searching
-            offset += total_len;
-        }
-
-        // Determine how many bytes to consume from the streambuf
-        size_t bytes_to_consume = 0;
-
-        if (first_incomplete_magic_offset != buf_size) {
-            // We found an incomplete frame – consume everything before its magic
-            bytes_to_consume = first_incomplete_magic_offset;
-        } else {
-            // Either we consumed some complete frames (offset > 0) or we scanned
-            // the whole buffer and found no magic. In both cases, consuming 'offset'
-            // bytes is safe. If no magic was found, offset = data.size() - 3,
-            // meaning we keep exactly the last 3 bytes for a potential partial magic.
-            bytes_to_consume = offset;
-        }
-
-        // TODO: rework with consume until
-        buffer.consume(bytes_to_consume);
-        return messages;
+    template <typename FrameHandler>
+    static std::size_t decode(boost::beast::flat_buffer& buffer, FrameHandler&& onFrame) {
+        throw std::runtime_error("Under construction!");
     }
 };
+
 }  // namespace network
