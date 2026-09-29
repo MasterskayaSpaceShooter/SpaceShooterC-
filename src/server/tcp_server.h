@@ -73,7 +73,7 @@ private:
 
     }
 
-    net::io_context& ioc_;
+    net::io_context& ioc_; ///< Контекст событий Asio
     tcp::acceptor acceptor_;  ///< Акцептор TCP-соединений Asio
     events::EventBus& event_bus_;                      ///< Шина событий
     network::FrameCodec& codec_;                        ///< Кодек протокола
