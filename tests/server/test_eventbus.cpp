@@ -160,7 +160,8 @@ TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     auto conn2 = eventbus->subscribe<UserCreatedEvent>(cb);
     auto conn3 = eventbus->subscribe<UserCreatedEvent>(cb);
 
-    UserCreatedEvent ucv{.user_id = user_id};
+    UserCreatedEvent ucv;
+    ucv.user_id = user_id;
     eventbus->publish(ucv);
 
     EXPECT_EQ(cb_counter, 3);
