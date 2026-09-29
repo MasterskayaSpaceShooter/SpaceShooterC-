@@ -142,7 +142,7 @@ struct EventB : public events::Event {
     int value = 20;
 };
 
-TEST(EventBusTest, CallsAllCallbacksForPublishedEvent){
+TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     struct UserCreatedEvent : public events::Event {
         int user_id{};
     };
@@ -151,7 +151,7 @@ TEST(EventBusTest, CallsAllCallbacksForPublishedEvent){
     auto eventbus = events::EventBus::create();
     int cb_counter = 0;
 
-    auto cb = [&](const UserCreatedEvent& ucv){
+    auto cb = [&](const UserCreatedEvent& ucv) {
         ++cb_counter;
         EXPECT_EQ(ucv.user_id, 42);
     };
