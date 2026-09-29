@@ -89,9 +89,7 @@ private:
      * @param event Входные данные: Структура события ClientDisconnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientDisconnected(const ClientDisconnectedEvent& event);
-    {
-    }
+    void onClientDisconnected(const ClientDisconnectedEvent& event) {};
 
     EventBus& event_bus_;             ///< Шина событий
     MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
