@@ -7,8 +7,6 @@
 #include "event_bus.h"
 #include "network_events.h"
 #include "frame_codec.h"
-//class FrameCodec;
-//class events::EventBus;
 
 /**
  * @brief Класс асинхронной сетевой сессии подключенного клиента.
