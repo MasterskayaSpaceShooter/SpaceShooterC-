@@ -1,9 +1,15 @@
 #pragma once
 #include <atomic>
 #include <boost/asio.hpp>
+#include <boost/asio/io_context.hpp>
 #include <memory>
+#include "event_bus.h"
+#include "frame_codec.h"
+#include "network_events.h"
+#include "session_registry.h"
 
-#include "SessionRegistry.h"
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
 
 /**
  * @brief Приемник входящих TCP-подключений.
@@ -23,7 +29,17 @@ public:
      * @param event_bus Входные данные: Шина событий сервера.
      * @param codec Входные данные: Кодек протокола.
      */
-    TcpServer(boost::asio::io_context& io_context, uint16_t port, EventBus& event_bus, FrameCodec& codec);
+    TcpServer(boost::asio::io_context& io_context,
+        uint16_t port,
+        events::EventBus& event_bus,
+        network::FrameCodec& codec)
+        :
+        ioc_(io_context),
+        acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
+        event_bus_(event_bus),
+        codec_(codec) {
+            start();
+        }
 
     /**
      * @brief Запускает процесс асинхронного прослушивания порта.
@@ -31,7 +47,9 @@ public:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void start();
+    void start() {
+
+    }
 
     /**
      * @brief Останавливает прием новых подключений.
@@ -39,7 +57,9 @@ public:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void stop();
+    void stop() {
+
+    }
 
 private:
     /**
@@ -49,11 +69,14 @@ private:
      * @inputs Входных параметров нет (работает через асинхронный колбэк Asio).
      * @outputs Выходных значений нет.
      */
-    void doAccept();
+    void doAccept() {
 
-    boost::asio::ip::tcp::acceptor acceptor_;  ///< Акцептор TCP-соединений Asio
-    EventBus& event_bus_;                      ///< Шина событий
-    FrameCodec& codec_;                        ///< Кодек протокола
+    }
+
+    net::io_context& ioc_;
+    tcp::acceptor acceptor_;  ///< Акцептор TCP-соединений Asio
+    events::EventBus& event_bus_;                      ///< Шина событий
+    network::FrameCodec& codec_;                        ///< Кодек протокола
     SessionRegistry session_registry_;         ///< Реестр сессий клиентов
     std::atomic<SessionId> next_session_id_{1};  ///< Счетчик для генерации уникальных SessionId
 };
