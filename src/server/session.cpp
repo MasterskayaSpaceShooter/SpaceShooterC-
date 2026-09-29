@@ -7,8 +7,10 @@ Session::~Session() {}
 
 void Session::start() {}
 
-void Session::send(std::vector<uint8_t> data) {
-    (void)data;
-}
+void Session::send(std::vector<uint8_t>) {}
 
 void Session::close() {}
+
+void Session::doRead() {}
+
+void Session::doWrite() {}
