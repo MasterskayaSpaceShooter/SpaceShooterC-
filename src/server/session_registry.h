@@ -3,8 +3,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "event_bus.h"
-#include "session.h"
+#include "Session.hpp"
 
 /**
  * @brief Потокобезопасный реестр активных клиентских сессий.
@@ -55,7 +54,7 @@ public:
     void broadcast(const std::vector<uint8_t>& data);
 
 private:
-    events::EventBus& event_bus_;                                       ///< Шина событий сервера
+    EventBus& event_bus_;                                               ///< Шина событий сервера
     std::mutex registry_mutex_;                                         ///< Мьютекс защиты таблицы сессий
     std::unordered_map<SessionId, std::shared_ptr<Session>> sessions_;  ///< Карта активных сессий
 };
