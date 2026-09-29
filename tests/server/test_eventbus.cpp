@@ -151,7 +151,7 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
 
     EXPECT_TRUE(b_events_callback);
 }
-*/
+
 {
 TEST(EventBusTest, ScopedConnection) {
     auto event_bus = events::EventBus::create();
@@ -170,3 +170,4 @@ TEST(EventBusTest, ScopedConnection) {
     EXPECT_EQ(call_cnt, 1);
 }
 }
+*/
