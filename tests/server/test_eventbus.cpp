@@ -108,6 +108,25 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
 }
 }  // namespace maks_tests
 
+namespace anns_tests {
+TEST(EventBusTest, ScopedConnection) {
+    auto event_bus = events::EventBus::create();
+    int call_cnt = 0;
+    {
+        boost::signals2::scoped_connection scoped_conn =
+            event_bus->subscribe<events::Event>([&call_cnt](const events::Event&) {
+                call_cnt++;
+            });
+
+        event_bus->publish(events::Event{});
+        EXPECT_EQ(call_cnt, 1);
+    }
+
+    event_bus->publish(events::Event{});
+    EXPECT_EQ(call_cnt, 1);
+}
+}  // namespace anns_tests
+
 // Код Макса
 /*
 
@@ -150,24 +169,5 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
     event_bus->publish(EventB{});
 
     EXPECT_TRUE(b_events_callback);
-}
-
-{
-TEST(EventBusTest, ScopedConnection) {
-    auto event_bus = events::EventBus::create();
-    int call_cnt = 0;
-    {
-        boost::signals2::scoped_connection scoped_conn =
-            event_bus->subscribe<events::Event>([&call_cnt](const events::Event&) {
-                call_cnt++;
-            });
-
-        event_bus->publish(events::Event{});
-        EXPECT_EQ(call_cnt, 1);
-    }
-
-    event_bus->publish(events::Event{});
-    EXPECT_EQ(call_cnt, 1);
-}
 }
 */
