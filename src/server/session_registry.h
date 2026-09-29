@@ -2,8 +2,8 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-
-#include "Session.hpp"
+#include "event_bus.h"
+#include "session.h"
 
 /**
  * @brief Потокобезопасный реестр активных клиентских сессий.
@@ -19,7 +19,7 @@ public:
      * @details Взаимодействует с полем: event_bus_. Подписывается на SendPacketEvent.
      * @param event_bus Входные данные: Ссылка на центральную шину событий сервера.
      */
-    explicit SessionRegistry(EventBus& event_bus);
+    explicit SessionRegistry(events::EventBus& event_bus);
 
     /**
      * @brief Регистрирует новую созданную сессию в реестре.
@@ -54,7 +54,7 @@ public:
     void broadcast(const std::vector<uint8_t>& data);
 
 private:
-    EventBus& event_bus_;        ///< Шина событий сервера
+    events::EventBus& event_bus_;        ///< Шина событий сервера
     std::mutex registry_mutex_;  ///< Мьютекс защиты таблицы сессий
     std::unordered_map<SessionId, std::shared_ptr<Session>> sessions_;  ///< Карта активных сессий
 };

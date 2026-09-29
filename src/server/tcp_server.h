@@ -37,7 +37,8 @@ public:
         ioc_(io_context),
         acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
         event_bus_(event_bus),
-        codec_(codec) {
+        codec_(codec),
+        session_registry_{event_bus} {
             start();
         }
 

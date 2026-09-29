@@ -4,11 +4,11 @@
 #include <mutex>
 #include <queue>
 #include <vector>
-
-#include "NetworkEvents.h"
-
-class FrameCodec;
-class EventBus;
+#include "event_bus.h"
+#include "network_events.h"
+#include "frame_codec.h"
+//class FrameCodec;
+//class events::EventBus;
 
 /**
  * @brief Класс асинхронной сетевой сессии подключенного клиента.
@@ -29,7 +29,7 @@ public:
      * @param event_bus Входные данные: Ссылка на шину событий для публикации кадров и дисконнектов.
      * @param codec Входные данные: Ссылка на кодек нарезки кадров.
      */
-    Session(boost::asio::ip::tcp::socket socket, SessionId id, EventBus& event_bus, FrameCodec& codec);
+    Session(boost::asio::ip::tcp::socket socket, SessionId id, events::EventBus& event_bus, network::FrameCodec& codec);
 
     /**
      * @brief Деструктор сессии.
@@ -93,8 +93,8 @@ private:
 
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет подключения
     const SessionId id_;                   ///< Уникальный ID сессии
-    EventBus& event_bus_;                  ///< Шина событий сервера
-    FrameCodec& codec_;                    ///< Кодек протокола
+    events::EventBus& event_bus_;                  ///< Шина событий сервера
+    network::FrameCodec& codec_;                    ///< Кодек протокола
 
     std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
