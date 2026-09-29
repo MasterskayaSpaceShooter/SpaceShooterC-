@@ -11,6 +11,7 @@ target_sources(common PRIVATE
         STUB_class.hpp
         STUB_class.cpp
         logger.h
+        frame_codec.h
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
