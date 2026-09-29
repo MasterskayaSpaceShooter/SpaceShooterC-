@@ -114,8 +114,12 @@ TEST(EventBusTest, PublishViaBaseClassReference_TriggersCorrectCallback) {
     int a_count = 0;
     int b_count = 0;
 
-    (void)event_bus->subscribe<EventA>([&](const EventA&) { ++a_count; });
-    (void)event_bus->subscribe<EventB>([&](const EventB&) { ++b_count; });
+    (void)event_bus->subscribe<EventA>([&](const EventA&) {
+        ++a_count;
+    });
+    (void)event_bus->subscribe<EventB>([&](const EventB&) {
+        ++b_count;
+    });
 
     EventA concrete_a{};
     const events::Event& base_ref = concrete_a;
