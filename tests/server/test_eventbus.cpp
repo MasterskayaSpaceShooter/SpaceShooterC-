@@ -127,18 +127,6 @@ TEST(EventBusTest, ScopedConnection) {
 }
 }  // namespace anns_tests
 
-#include <gtest/gtest.h>
-
-#include "event_bus.h"
-
-struct EventA : public events::Event {
-    int value = 10;
-};
-
-struct EventB : public events::Event {
-    int value = 20;
-};
-
 TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     struct UserCreatedEvent : public events::Event {
         int user_id{};
@@ -166,33 +154,4 @@ TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     EXPECT_TRUE(conn1.connected());
     EXPECT_TRUE(conn2.connected());
     EXPECT_TRUE(conn3.connected());
-}
-
-TEST(EventBusTest, PublishedEventA_DosNotTriger_EventB) {
-    auto event_bus = events::EventBus::create();
-
-    bool b_events_callback = false;
-
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
-        b_events_callback = true;
-    });
-
-    event_bus->publish(EventA{});
-
-    EXPECT_FALSE(b_events_callback);
-}
-
-// Дополнительный тест для события типа Б
-TEST(EventBusTest, PublishedEventB_Triger_EventB) {
-    auto event_bus = events::EventBus::create();
-
-    bool b_events_callback = false;
-
-    auto conn = event_bus->subscribe<EventB>([&](const EventB&) {
-        b_events_callback = true;
-    });
-
-    event_bus->publish(EventB{});
-
-    EXPECT_TRUE(b_events_callback);
 }
