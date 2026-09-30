@@ -1,9 +1,11 @@
-add_executable(unit_tests_common STUB_test_common.cpp)
+add_executable(unit_tests_common
+        test_frame_codec.cpp
+)
 
 # Линкуем тестируемую статическую библиотеку common и таргет gtest из Конана
 target_link_libraries(unit_tests_common PRIVATE
-    common
-    GTest::gtest_main
+        common
+        GTest::gtest_main
 )
 
 # Интегрируем исполняемый файл в систему CTest для автоматического обнаружения тестов
