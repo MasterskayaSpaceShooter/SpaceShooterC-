@@ -17,9 +17,8 @@ public:
      * @details Взаимодействует с членами класса: инициализирует io_context_, thread_count_ и work_guard_.
      * @param thread_count Входные данные: Количество рабочих потоков в пуле (по умолчанию равно числу ядер CPU).
      */
-    explicit NetworkContext(size_t thread_count = std::thread::hardware_concurrency()) 
-        : work_guard_(boost::asio::make_work_guard(io_context_)), 
-        thread_count_(thread_count) {}
+    explicit NetworkContext(size_t thread_count = std::thread::hardware_concurrency()) :
+        work_guard_(boost::asio::make_work_guard(io_context_)), thread_count_(thread_count) {}
 
     /**
      * @brief Деструктор сетевого контекста.
@@ -59,7 +58,6 @@ public:
      */
     void stop() {
         work_guard_.reset();
-        io_context_.stop();
         worker_threads_.clear();
     }
 
