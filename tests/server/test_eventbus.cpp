@@ -162,7 +162,7 @@ TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
 }
 }  // namespace violetta_tests
 
-//pavel_galkin
+// pavel_galkin
 TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     struct UserCreatedEvent : public events::Event {
         int user_id{};
