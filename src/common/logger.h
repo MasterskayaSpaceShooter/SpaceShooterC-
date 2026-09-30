@@ -106,8 +106,14 @@ private:
         localtime_r(&time_c, &tm_buf);
 #endif
 
-        std::string time_str =
-            std::format("{:02}:{:02}:{:02}.{:03}", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms.count());
+        std::string time_str = std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+                                           tm_buf.tm_year + 1900,
+                                           tm_buf.tm_mon + 1,
+                                           tm_buf.tm_mday,
+                                           tm_buf.tm_hour,
+                                           tm_buf.tm_min,
+                                           tm_buf.tm_sec,
+                                           ms.count());
 
         std::string level_str;
         switch (level) {
@@ -128,11 +134,15 @@ private:
         // Извлекаем только имя файла из полного пути (например, "src/network/Session.cpp" -> "Session.cpp")
         std::string filename = std::filesystem::path(loc.file).filename().string();
 
+        // MODULE извлекаем из пути файла: src/server/event_bus.h -> "event_bus"
+        std::string module = std::filesystem::path(loc.file).stem().string();
+
         // Формат лога: [TIME][TH:1234][FILE:LINE][FUNC][LEVEL] message
         std::string formatted = std::format("[{}][TH:{:>5}][{}:{}][{}()][{}] {}\n",
                                             time_str,
                                             std::hash<std::thread::id>{}(thread_id) % 10000,
                                             filename,
+                                            module,
                                             loc.line,
                                             loc.function,
                                             level_str,

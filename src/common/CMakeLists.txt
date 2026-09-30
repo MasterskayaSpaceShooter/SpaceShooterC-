@@ -10,7 +10,6 @@ target_sources(common PRIVATE
         # Здесь перечисляем файлы реализации. Они компонуются в статическую библиотеку common ПРИМЕР:
         STUB_class.hpp
         STUB_class.cpp
-        logger.h
         frame_codec.h
 )
 
