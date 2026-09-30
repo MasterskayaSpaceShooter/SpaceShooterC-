@@ -161,3 +161,33 @@ TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
     }
 }
 }  // namespace violetta_tests
+
+// pavel_galkin
+TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
+    struct UserCreatedEvent : public events::Event {
+        int user_id{};
+    };
+
+    constexpr int user_id = 42;
+    auto eventbus = events::EventBus::create();
+    int cb_counter = 0;
+
+    auto cb = [&](const UserCreatedEvent& ucv) {
+        ++cb_counter;
+        EXPECT_EQ(ucv.user_id, user_id);
+    };
+
+    auto conn1 = eventbus->subscribe<UserCreatedEvent>(cb);
+    auto conn2 = eventbus->subscribe<UserCreatedEvent>(cb);
+    auto conn3 = eventbus->subscribe<UserCreatedEvent>(cb);
+
+    UserCreatedEvent ucv;
+    ucv.user_id = user_id;
+    eventbus->publish(ucv);
+
+    EXPECT_EQ(cb_counter, 3);
+
+    EXPECT_TRUE(conn1.connected());
+    EXPECT_TRUE(conn2.connected());
+    EXPECT_TRUE(conn3.connected());
+}
