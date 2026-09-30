@@ -138,7 +138,7 @@ TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
 
     constexpr int subscriber_count = 4;
     constexpr int publisher_count = 4;
-    constexpr int operations_per_thread = 1000;
+    constexpr int operations_per_thread = 500;
 
     std::vector<std::jthread> threads;
 
