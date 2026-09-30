@@ -17,14 +17,18 @@ public:
      * @details Взаимодействует с членами класса: инициализирует io_context_, thread_count_ и work_guard_.
      * @param thread_count Входные данные: Количество рабочих потоков в пуле (по умолчанию равно числу ядер CPU).
      */
-    explicit NetworkContext(size_t thread_count = std::thread::hardware_concurrency());
+    explicit NetworkContext(size_t thread_count = std::thread::hardware_concurrency()) 
+        : work_guard_(boost::asio::make_work_guard(io_context_)), 
+        thread_count_(thread_count) {}
 
     /**
      * @brief Деструктор сетевого контекста.
      * @details Взаимодействует с членами класса: автоматически вызывает метод stop() для корректного завершения
      * потоков.
      */
-    ~NetworkContext();
+    ~NetworkContext() {
+        stop();
+    }
 
     NetworkContext(const NetworkContext&) = delete;
     NetworkContext& operator=(const NetworkContext&) = delete;
@@ -35,7 +39,17 @@ public:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void start();
+    void start() {
+        if (!worker_threads_.empty()) {
+            return;
+        }
+        worker_threads_.reserve(thread_count_);
+        for (size_t i = 0; i < thread_count_; ++i) {
+            worker_threads_.emplace_back([this]() {
+                io_context_.run();
+            });
+        }
+    }
 
     /**
      * @brief Останавливает io_context и дожидается корректного завершения всех рабочих потоков.
@@ -43,7 +57,11 @@ public:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void stop();
+    void stop() {
+        work_guard_.reset();
+        io_context_.stop();
+        worker_threads_.clear();
+    }
 
     /**
      * @brief Возвращает ссылку на внутренний контекст ввода-вывода Asio.
