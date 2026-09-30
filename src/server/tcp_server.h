@@ -51,9 +51,9 @@ private:
      */
     void doAccept();
 
-    boost::asio::ip::tcp::acceptor acceptor_;  ///< Акцептор TCP-соединений Asio
-    EventBus& event_bus_;                      ///< Шина событий
-    FrameCodec& codec_;                        ///< Кодек протокола
-    SessionRegistry session_registry_;         ///< Реестр сессий клиентов
+    boost::asio::ip::tcp::acceptor acceptor_;   ///< Акцептор TCP-соединений Asio
+    EventBus& event_bus_;  ///< Шина событий
+    FrameCodec& codec_;  ///< Кодек протокола
+    SessionRegistry session_registry_;  ///< Реестр сессий клиентов
     std::atomic<SessionId> next_session_id_{1};  ///< Счетчик для генерации уникальных SessionId
 };
