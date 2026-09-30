@@ -1,5 +1,8 @@
+#include <atomic>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <thread>
+#include <vector>
 
 // МОК ЛОГЕРА
 
@@ -155,3 +158,34 @@ TEST(EventBusTest, CallsAllCallbacksForPublishedEvent) {
     EXPECT_TRUE(conn2.connected());
     EXPECT_TRUE(conn3.connected());
 }
+namespace violetta_tests {
+TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
+    auto event_bus = events::EventBus::create();
+
+    std::atomic<int> callback_count{0};
+
+    constexpr int subscriber_count = 4;
+    constexpr int publisher_count = 4;
+    constexpr int operations_per_thread = 500;
+
+    std::vector<std::jthread> threads;
+
+    for (int i = 0; i < subscriber_count; ++i) {
+        threads.emplace_back([&] {
+            for (int j = 0; j < operations_per_thread; ++j) {
+                (void)event_bus->subscribe<events::Event>([&](const events::Event&) {
+                    ++callback_count;
+                });
+            }
+        });
+    }
+
+    for (int i = 0; i < publisher_count; ++i) {
+        threads.emplace_back([&] {
+            for (int j = 0; j < operations_per_thread; ++j) {
+                event_bus->publish(events::Event{});
+            }
+        });
+    }
+}
+}  // namespace violetta_tests
