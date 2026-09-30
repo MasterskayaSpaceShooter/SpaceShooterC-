@@ -154,7 +154,6 @@ TEST(EventBusTest, ScopedConnection) {
 }
 
 }  // namespace anns_tests
-}  // namespace anns_tests
 
 namespace violetta_tests {
 TEST(EventBusTest, ConcurrentSubscribeAndPublish) {
