@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 
 /**
@@ -26,8 +27,11 @@ struct SourceLocation {
 /**
  * @brief Потокобезопасный асинхронный логгер на boost::asio::strand с поддержкой метаданных кода.
  * @details Зона ответственности:
- *          - Сериализация вывода сообщений через strand.
- *          - Форматирование лога с точным указанием файла, строки и функции вызова.
+ *          - Сериализация вывода сообщений через strand без блокировки потоков.
+ *          - Форматирование лога с указанием модуля, файла, строки и функции вызова.
+ *
+ *          Strand не является мьютексом: потоки не блокируются, а ставят задачи
+ *          в очередь io_context для последовательного выполнения.
  */
 class Logger {
 public:
@@ -95,7 +99,7 @@ private:
                         LogLevel level,
                         const SourceLocation& loc,
                         const std::string& message) {
-        // Время: HH:MM:SS.mmm
+        // Время: YYYY-MM-DD HH:MM:SS.mmm
         auto time_c = std::chrono::system_clock::to_time_t(timestamp);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
@@ -131,18 +135,21 @@ private:
                 break;
         }
 
-        // Извлекаем только имя файла из полного пути (например, "src/network/Session.cpp" -> "Session.cpp")
-        std::string filename = std::filesystem::path(loc.file).filename().string();
+        // Извлекаем filename и module без лишних аллокаций через std::string_view.
+        // Например: "src/network/Session.cpp" -> filename="Session.cpp", module="Session"
+        std::string_view file_view{loc.file};
+        auto slash = file_view.find_last_of("/\\");
+        std::string_view filename = (slash == std::string_view::npos) ? file_view : file_view.substr(slash + 1);
 
-        // MODULE извлекаем из пути файла: src/server/event_bus.h -> "event_bus"
-        std::string module = std::filesystem::path(loc.file).stem().string();
+        auto dot = filename.find_last_of('.');
+        std::string_view module = (dot == std::string_view::npos) ? filename : filename.substr(0, dot);
 
-        // Формат лога: [TIME][TH:1234][FILE:LINE][FUNC][LEVEL] message
-        std::string formatted = std::format("[{}][TH:{:>5}][{}:{}][{}()][{}] {}\n",
+        // Формат лога: [TIME][TH:xxxx][MODULE][FILE:LINE][FUNC][LEVEL] message
+        std::string formatted = std::format("[{}][TH:{}][{}][{}:{}][{}()][{}] {}\n",
                                             time_str,
-                                            std::hash<std::thread::id>{}(thread_id) % 10000,
-                                            filename,
+                                            std::format("{}", thread_id),
                                             module,
+                                            filename,
                                             loc.line,
                                             loc.function,
                                             level_str,
