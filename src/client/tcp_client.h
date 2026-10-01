@@ -1,12 +1,15 @@
 #pragma once
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <vector>
 
+namespace network {
 class FrameCodec;
+}
 
 /**
  * @brief Асинхронный сетевой TCP-клиент.
@@ -29,7 +32,7 @@ public:
      * @param io_context Входные данные: Контекст ввода-вывода Asio.
      * @param codec Входные данные: Ссылка на кодек протокола.
      */
-    TcpClient(boost::asio::io_context& io_context, FrameCodec& codec);
+    TcpClient(boost::asio::io_context& io_context, network::FrameCodec& codec);
 
     /**
      * @brief Деструктор клиента. Закрывает сокет.
@@ -111,10 +114,11 @@ private:
     void doWrite();
 
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет клиента
-    FrameCodec& codec_;                    ///< Кодек протокола
+    network::FrameCodec& codec_;           ///< Кодек протокола
 
-    bool is_connected_{false};          ///< Флаг подключения
-    std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
+    bool is_connected_{false};  ///< Флаг подключения
+    // std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
+    boost::beast::flat_buffer read_buffer_;
     static constexpr size_t READ_BLOCK_SIZE = 4096;
 
     std::mutex write_mutex_;                        ///< Мьютекс очереди отправки
