@@ -6,6 +6,7 @@
 #include <format>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -32,6 +33,8 @@ struct SourceLocation {
  *
  *          Strand не является мьютексом: потоки не блокируются, а ставят задачи
  *          в очередь io_context для последовательного выполнения.
+ *
+ *          Logger — синглтон, живёт до конца программы. this в handler'ах валиден.
  */
 class Logger {
 public:
@@ -48,16 +51,21 @@ public:
 
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
+    Logger(Logger&&) = delete;
+    Logger& operator=(Logger&&) = delete;
 
     /**
      * @brief Инициализирует strand логгера, привязывая его к io_context приложения.
-     * @details Взаимодействует с полем: strand_.
+     * @details Потокобезопасен и идемпотентен: повторный вызов не перезаписывает strand_.
+     *          Взаимодействует с полем: strand_, init_flag_.
      * @param io_context Входные данные: Ссылка на io_context из NetworkContext.
      * @outputs Выходных значений нет.
      */
     void init(boost::asio::io_context& io_context) {
-        strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
-            boost::asio::make_strand(io_context));
+        std::call_once(init_flag_, [this, &io_context]() {
+            strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
+                boost::asio::make_strand(io_context));
+        });
     }
 
     /**
@@ -135,7 +143,7 @@ private:
                 break;
         }
 
-        // Извлекаем filename и module без лишних аллокаций через std::string_view.
+        // Извлекаем filename и module без аллокаций через std::string_view.
         // Например: "src/network/Session.cpp" -> filename="Session.cpp", module="Session"
         std::string_view file_view{loc.file};
         auto slash = file_view.find_last_of("/\\");
@@ -163,6 +171,7 @@ private:
     }
 
     std::unique_ptr<boost::asio::strand<boost::asio::io_context::executor_type>> strand_;
+    std::once_flag init_flag_;
 };
 
 // ============================================================================
