@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -10,6 +11,11 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+=======
+#include <cstdint>
+#include <gtest/gtest.h>
+#include <memory>
+>>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 #include <vector>
 
 #include "event_bus.h"
@@ -134,6 +140,7 @@ TEST(NetworkResponseRouterTest, MultipleRoutersCreateAndDestroySafely) {
     EXPECT_TRUE(probe_called);
     connection.disconnect();
 }
+<<<<<<< HEAD
 
 /// sendTo: вызов метода должен публиковать SendPacketEvent в шину событий,
 /// и это событие обязано доходить до подписчиков.
@@ -925,3 +932,5 @@ TEST(NetworkResponseRouterTest, ReentrantPublishInsideHandler) {
 
     EXPECT_EQ(handler_calls, 2);
 }
+=======
+>>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
