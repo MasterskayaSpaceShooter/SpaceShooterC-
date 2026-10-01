@@ -97,14 +97,6 @@ void SessionRegistry::broadcast(const std::vector<uint8_t>& data) {
     LOG_INFO("Data sended");
 }
 
-std::shared_ptr<Session> SessionRegistry::getSession(SessionId id) {
-    {
-        std::lock_guard lock{registry_mutex_};
-        if (auto it = sessions_.find(id); it != sessions_.end()) {
-            LOG_INFO("session returned");
-            return it->second;
-        }
-    }
-    LOG_ERROR("session is null by this id");
-    return nullptr;
+std::shared_ptr<Session> SessionRegistrygetSession(SessionId id) {
+    throw std::runtime_error("Empty body of method");
 }
