@@ -16,6 +16,6 @@ void SessionRegistry::broadcast(const std::vector<uint8_t>& data) {
     return;
 }
 
-std::shared_ptr<Session> SessionRegistrygetSession(SessionId id) {
+std::shared_ptr<Session> SessionRegistry::getSession(SessionId id) {
     throw std::runtime_error("Empty body of method");
 }
