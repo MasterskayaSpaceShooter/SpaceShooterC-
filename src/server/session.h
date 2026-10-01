@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -98,6 +99,7 @@ private:
 
     std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
+    boost::beast::flat_buffer flat_buffer_;          ///< накопитель
 
     std::mutex write_mutex_;                        ///< Мьютекс защиты очереди записи
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь исходящих кадров
