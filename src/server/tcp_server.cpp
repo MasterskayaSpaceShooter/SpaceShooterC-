@@ -3,7 +3,10 @@
 #include "network_events.h"
 #include "session.h"
 
-TcpServer::TcpServer(boost::asio::io_context& io_context, uint16_t port, events::EventBus& event_bus, network::FrameCodec& codec) :
+TcpServer::TcpServer(boost::asio::io_context& io_context,
+                     uint16_t port,
+                     events::EventBus& event_bus,
+                     network::FrameCodec& codec) :
     acceptor_(io_context, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port)), event_bus_(event_bus),
     codec_(codec), session_registry_(event_bus) {}
 
