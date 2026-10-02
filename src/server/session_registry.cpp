@@ -8,7 +8,7 @@
 #include "session.h"
 
 SessionRegistry::SessionRegistry(events::EventBus& event_bus) : event_bus_(event_bus) {
-    event_bus_.subscribe<SendPacketEvent>([this](const SendPacketEvent& event) {
+    auto cb = event_bus_.subscribe<SendPacketEvent>([this](const SendPacketEvent& event) {
         if (this->sessions_.count(event.session_id) > 0) {
             auto session = getSession(event.session_id);
             session->send(event.payload);
