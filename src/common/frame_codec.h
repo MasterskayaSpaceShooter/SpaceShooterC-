@@ -8,7 +8,10 @@
 #include <boost/endian/conversion.hpp>
 #include <cstddef>
 #include <cstdint>  // IWYU pragma: keep // uint
+#include <memory>
 #include <span>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace network {
@@ -76,9 +79,10 @@ using PayloadView = std::span<const std::uint8_t>;
  * @par Example
  * @code
  * // Send
- * auto frame = FrameCodec::encode(std::move(bytes));
- * boost::asio::async_write(sock, frame.buffers(),
- *     [f = std::move(frame)](auto ec, std::size_t) { ... });
+ * auto frame = std::make_shared<Frame>(FrameCodec::encode(std::move(bytes)));
+ * auto buffers = frame->buffers();
+ * boost::asio::async_write(sock, buffers,
+ *  [frame](auto ec, std::size_t) { ... });
  *
  * // Receive (after every async_read)
  * FrameCodec::decode(read_buffer_, [](PayloadView p) {
