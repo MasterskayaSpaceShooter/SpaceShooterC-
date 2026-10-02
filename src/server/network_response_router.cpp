@@ -21,6 +21,10 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
     }
 }
 
+void NetworkResponseRouter::onClientConnected(const ClientConnectedEvent& event) {
+    LOG_INFO("Клиент подключен: session_id={}, адрес={}", event.session_id, event.remote_address);
+}
+
 void NetworkResponseRouter::setupSubscriptions() {
     subscriptions_.emplace_back(event_bus_.subscribe<NetworkMessageEvent>([this](const NetworkMessageEvent& event) {
         onMessageReceived(event);

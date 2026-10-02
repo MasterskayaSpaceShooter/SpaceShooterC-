@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "event_bus.h"
+#include "logger.h"
 #include "network_events.h"
 
 /**
@@ -82,7 +83,7 @@ private:
      * @param event Входные данные: Структура события ClientConnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientConnected(const ClientConnectedEvent& /*event*/) {};
+    void onClientConnected(const ClientConnectedEvent& event);
 
     /**
      * @brief Внутренний обработчик события отключения клиента.
