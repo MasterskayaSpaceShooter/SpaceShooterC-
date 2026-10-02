@@ -1,5 +1,3 @@
-#include <utility>
-
 #include "network_response_router.h"
 
 NetworkResponseRouter::NetworkResponseRouter(events::EventBus& event_bus) : event_bus_(event_bus) {
@@ -36,4 +34,9 @@ void NetworkResponseRouter::setupSubscriptions() {
         event_bus_.subscribe<ClientDisconnectedEvent>([this](const ClientDisconnectedEvent& event) {
             onClientDisconnected(event);
         }));
+}
+
+void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {
+    // Формируем и публикуем событие отправки пакета целевому клиенту
+    event_bus_.publish(SendPacketEvent{session_id, std::move(payload)});
 }
