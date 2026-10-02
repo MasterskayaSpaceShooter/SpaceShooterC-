@@ -273,6 +273,23 @@ TEST(NetworkResponseRouterTest, SendToMultipleCallsPublishSeparateEvents) {
     connection.disconnect();
 }
 
+/// broadcast: поле session_id в опубликованном SendPacketEvent должно быть
+/// равно нулю — маркеру массовой рассылки всем клиентам.
+TEST(NetworkResponseRouterTest, BroadcastUsesZeroSessionIdMarker) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    SessionId received_id = std::numeric_limits<SessionId>::max();
+    auto connection = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent& event) {
+        received_id = event.session_id;
+    });
+
+    router.broadcast({0x01});
+
+    EXPECT_EQ(received_id, 0);
+    connection.disconnect();
+}
+
 /// setMessageHandler: зарегистрированный обработчик вызывается синхронно при
 /// публикации NetworkMessageEvent и получает точные session_id и payload.
 TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesHandlerWithSessionAndPayload) {
