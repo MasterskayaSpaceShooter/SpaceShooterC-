@@ -56,7 +56,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void broadcast(std::vector<uint8_t> /*payload*/){};
+    void broadcast(std::vector<uint8_t> payload);
 
 private:
     /**
