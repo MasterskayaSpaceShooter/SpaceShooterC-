@@ -92,7 +92,7 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    events::EventBus& event_bus_;                             ///< Шина событий
-    MessageHandler message_handler_;                          ///< Колбэк передатчик пакетов во внешние системы
+    events::EventBus& event_bus_;  ///< Шина событий
+    MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
     std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
 };
