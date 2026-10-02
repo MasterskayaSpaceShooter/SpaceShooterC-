@@ -1,6 +1,8 @@
 #pragma once
 #include <functional>
+#include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "event_bus.h"
@@ -46,7 +48,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void sendTo(SessionId /*session_id*/, std::vector<uint8_t> /*payload*/){};
+    void sendTo(SessionId session_id, std::vector<uint8_t> payload);
 
     /**
      * @brief Формирует и публикует событие массовой рассылки пакета всем клиентам.
