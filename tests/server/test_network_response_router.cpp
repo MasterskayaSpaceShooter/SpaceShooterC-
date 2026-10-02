@@ -2,9 +2,11 @@
 #include <atomic>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -501,9 +503,157 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
     EXPECT_EQ(received_payloads, expected_payloads);
 }
 
-// =============================================================================
-// Граничные случаи
-// =============================================================================
+/// onClientConnected: событие подключения нового клиента должно быть
+/// залогировано в консоль. INFO-логи пишутся в std::cout синхронно
+/// (strand логгера в тестах не инициализирован), поэтому перехватываем
+/// вывод std::cout и проверяем, что в логе есть ID сессии и адрес клиента.
+TEST(NetworkResponseRouterTest, OnClientConnectedLogsConnectionEvent) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    const SessionId expected_id = 42;
+    const std::string expected_address = "192.168.1.10:12345";
+
+    // Перехватываем std::cout (INFO-уровень логгера выводится именно туда)
+    std::ostringstream captured;
+    std::streambuf* old_cout_buf = std::cout.rdbuf(captured.rdbuf());
+    try {
+        event_bus->publish(ClientConnectedEvent{expected_id, expected_address});
+    } catch (...) {
+        std::cout.rdbuf(old_cout_buf);  // восстанавливаем поток при исключении
+        throw;
+    }
+    std::cout.rdbuf(old_cout_buf);
+
+    const std::string output = captured.str();
+    EXPECT_FALSE(output.empty());  // было записано хотя бы одно лог-сообщение
+    EXPECT_NE(output.find("Клиент подключен"), std::string::npos);
+    EXPECT_NE(output.find(std::to_string(expected_id)), std::string::npos);
+    EXPECT_NE(output.find(expected_address), std::string::npos);
+}
+
+/// onClientConnected: публикация ClientConnectedEvent с любыми корректными
+/// параметрами (ID сессии и адрес) безопасна — не бросает исключений.
+/// Проверяются broadcast-маркер 0, обычные ID, максимальный uint64,
+/// а также пустой, типовой и очень длинный адрес.
+TEST(NetworkResponseRouterTest, OnClientConnectedHandlesVariousIdsAndAddresses) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    const std::vector<SessionId> ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
+    const std::vector<std::string> addresses = {"", "127.0.0.1:8080", std::string(4096, 'x') + ":65535"};
+
+    for (SessionId id : ids) {
+        for (const std::string& address : addresses) {
+            EXPECT_NO_THROW(event_bus->publish(ClientConnectedEvent{id, address}));
+        }
+    }
+}
+
+/// onClientConnected: событие подключения не должно порождать никаких других
+/// сетевых событий (SendPacketEvent, NetworkMessageEvent, ClientDisconnectedEvent).
+TEST(NetworkResponseRouterTest, OnClientConnectedPublishesNoOtherEvents) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    bool unexpected_event = false;
+    auto msg_conn = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
+        unexpected_event = true;
+    });
+    auto send_conn = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent&) {
+        unexpected_event = true;
+    });
+    auto disconnect_conn = event_bus->subscribe<ClientDisconnectedEvent>([&](const ClientDisconnectedEvent&) {
+        unexpected_event = true;
+    });
+
+    event_bus->publish(ClientConnectedEvent{1, "127.0.0.1:8080"});
+
+    EXPECT_FALSE(unexpected_event);
+
+    msg_conn.disconnect();
+    send_conn.disconnect();
+    disconnect_conn.disconnect();
+}
+
+/// onClientConnected: серия событий подключения не ломает маршрутизацию —
+/// последующие входящие сообщения доходят до обработчика в порядке публикации,
+/// а сами подключения не считаются сообщениями.
+TEST(NetworkResponseRouterTest, OnClientConnectedDoesNotBreakMessageRouting) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    std::vector<SessionId> received_sessions;
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+        received_sessions.push_back(session_id);
+    });
+
+    event_bus->publish(ClientConnectedEvent{10, "10.0.0.1:1000"});
+    event_bus->publish(ClientConnectedEvent{20, "10.0.0.2:2000"});
+    event_bus->publish(ClientConnectedEvent{30, "10.0.0.3:3000"});
+
+    ASSERT_TRUE(received_sessions.empty());  // подключения не доходят до обработчика сообщений
+
+    event_bus->publish(NetworkMessageEvent{11, {0x01}});
+    event_bus->publish(NetworkMessageEvent{21, {0x02}});
+
+    const std::vector<SessionId> expected = {11, 21};
+    EXPECT_EQ(received_sessions, expected);
+}
+
+/// onClientConnected: публикация события подключения до регистрации внешнего
+/// обработчика безопасна — обработчик применяется только к последующим пакетам.
+TEST(NetworkResponseRouterTest, OnClientConnectedBeforeHandlerRegistrationIsSafe) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    EXPECT_NO_THROW(event_bus->publish(ClientConnectedEvent{1, "127.0.0.1:8080"}));
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(ClientConnectedEvent{2, "127.0.0.1:8081"});
+    EXPECT_EQ(handler_calls, 0);  // подключения не вызывают обработчик сообщений
+
+    event_bus->publish(NetworkMessageEvent{3, {0x03}});
+    EXPECT_EQ(handler_calls, 1);  // сообщение после регистрации доставлено
+}
+
+/// onClientConnected: параллельная публикация событий подключения из нескольких
+/// потоков потокобезопасна и не нарушает последующую доставку сообщений.
+TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    constexpr int kThreadCount = 4;
+    constexpr int kEventsPerThread = 250;
+
+    std::vector<std::thread> threads;
+    threads.reserve(kThreadCount);
+    for (int t = 0; t < kThreadCount; ++t) {
+        threads.emplace_back([&, t]() {
+            for (int i = 0; i < kEventsPerThread; ++i) {
+                const SessionId id = static_cast<SessionId>(t * kEventsPerThread + i + 1);
+                event_bus->publish(ClientConnectedEvent{id, "127.0.0.1:9999"});
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    // После «стресса» событиями подключения шина и маршрутизатор остаются
+    // работоспособными: сообщение доходит до обработчика.
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+    EXPECT_EQ(handler_calls, 1);
+}
 
 /// onMessageReceived: два маршрутизатора на одной шине — событие доставляется
 /// обработчикам обоих (фиксируется поведение boost::signals2).
@@ -526,10 +676,6 @@ TEST(NetworkResponseRouterTest, TwoRoutersOnSameBusBothReceive) {
     EXPECT_EQ(first_calls, 1);
     EXPECT_EQ(second_calls, 1);
 }
-
-// =============================================================================
-// Негативные сценарии
-// =============================================================================
 
 /// onMessageReceived: события подключения, отключения и запроса на отправку
 /// НЕ приводят к вызову обработчика входящих сообщений — только
@@ -566,10 +712,6 @@ TEST(NetworkResponseRouterTest, HandlerExceptionPropagatesToPublisher) {
 
     EXPECT_THROW(event_bus->publish(NetworkMessageEvent{1, {0x01}}), std::runtime_error);
 }
-
-// =============================================================================
-// Многопоточность и реентерабельность
-// =============================================================================
 
 /// onMessageReceived: параллельная публикация из нескольких потоков безопасна
 /// (EventBus потокобезопасен); все сообщения доходят до обработчика без потерь
