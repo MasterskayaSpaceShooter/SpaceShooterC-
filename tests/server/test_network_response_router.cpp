@@ -89,10 +89,7 @@ TEST(NetworkResponseRouterTest, DestructorDisconnectsSubscriptions) {
 /// NetworkResponseRouter (на неё можно подписаться и публиковать события).
 TEST(NetworkResponseRouterTest, DestructorEventBusRemainsUsable) {
     auto event_bus = makeEventBus();
-
-    {
-        NetworkResponseRouter router(*event_bus);
-    }
+    NetworkResponseRouter router(*event_bus);
 
     bool probe_called = false;
     auto connection = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
