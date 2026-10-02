@@ -25,25 +25,13 @@ public:
      * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
      * @param event_bus Входные данные: Ссылка на шину событий.
      */
-<<<<<<< HEAD
-<<<<<<< HEAD
     explicit NetworkResponseRouter(events::EventBus& event_bus);
-=======
-    explicit NetworkResponseRouter(EventBus& event_bus) {};
->>>>>>> e9d2eab (S-22 network-response-router: add methods stubs (#44))
-=======
-    explicit NetworkResponseRouter(events::EventBus& event_bus);
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 
     /**
      * @brief Деструктор маршрутизатора.
      * @details Освобождает подписки и ресурсы.
      */
-<<<<<<< HEAD
-    ~NetworkResponseRouter() {};
-=======
     ~NetworkResponseRouter();
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 
     /**
      * @brief Регистрирует внешний обработчик входящих декодированных кадров.
@@ -51,11 +39,7 @@ public:
      * @param handler Входные данные: Функция-колбэк вида void(SessionId, vector<uint8_t>).
      * @outputs Выходных значений нет.
      */
-<<<<<<< HEAD
-    void setMessageHandler(MessageHandler handler) {};
-=======
     void setMessageHandler(MessageHandler handler);
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 
     /**
      * @brief Формирует и публикует событие отправки пакета конкретному клиенту.
@@ -64,7 +48,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void sendTo(SessionId /*session_id*/, std::vector<uint8_t> /*payload*/){};
+    void sendTo(SessionId session_id, std::vector<uint8_t> payload);
 
     /**
      * @brief Формирует и публикует событие массовой рассылки пакета всем клиентам.
@@ -72,7 +56,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void broadcast(std::vector<uint8_t> /*payload*/){};
+    void broadcast(std::vector<uint8_t> payload);
 
 private:
     /**
@@ -82,11 +66,7 @@ private:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-<<<<<<< HEAD
-    void setupSubscriptions() {};
-=======
     void setupSubscriptions();
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 
     /**
      * @brief Внутренний обработчик прихода входящего кадра от клиента.
@@ -94,11 +74,7 @@ private:
      * @param event Входные данные: Структура события NetworkMessageEvent.
      * @outputs Выходных значений нет.
      */
-<<<<<<< HEAD
-    void onMessageReceived(const NetworkMessageEvent& event) {};
-=======
     void onMessageReceived(const NetworkMessageEvent& event);
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 
     /**
      * @brief Внутренний обработчик события подключения нового клиента.
@@ -106,7 +82,7 @@ private:
      * @param event Входные данные: Структура события ClientConnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientConnected(const ClientConnectedEvent& /*event*/) {};
+    void onClientConnected(const ClientConnectedEvent& event);
 
     /**
      * @brief Внутренний обработчик события отключения клиента.
@@ -114,7 +90,7 @@ private:
      * @param event Входные данные: Структура события ClientDisconnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientDisconnected(const ClientDisconnectedEvent& /*event*/) {};
+    void onClientDisconnected(const ClientDisconnectedEvent& event);
 
     events::EventBus& event_bus_;                             ///< Шина событий
     MessageHandler message_handler_;                          ///< Колбэк передатчик пакетов во внешние системы
