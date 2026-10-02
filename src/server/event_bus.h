@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+// TODO: Убрать после подключения логгера
 // Заглушки для логирования
 #ifndef LOG_INFO
 #define LOG_INFO(msg) (void)0

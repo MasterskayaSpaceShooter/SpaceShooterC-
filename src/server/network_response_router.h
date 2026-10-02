@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "event_bus.h"
-#include "logger.h"
 #include "network_events.h"
 
 /**
@@ -91,7 +90,7 @@ private:
      * @param event Входные данные: Структура события ClientDisconnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientDisconnected(const ClientDisconnectedEvent& /*event*/) {};
+    void onClientDisconnected(const ClientDisconnectedEvent& event);
 
     events::EventBus& event_bus_;                             ///< Шина событий
     MessageHandler message_handler_;                          ///< Колбэк передатчик пакетов во внешние системы

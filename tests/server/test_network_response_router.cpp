@@ -655,6 +655,152 @@ TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
     EXPECT_EQ(handler_calls, 1);
 }
 
+/// onClientDisconnected: событие отключения клиента должно быть залогировано
+/// в консоль. INFO-логи пишутся в std::cout синхронно (strand логгера в тестах
+/// не инициализирован), поэтому перехватываем вывод std::cout и проверяем,
+/// что в логе присутствует ID отключившейся сессии.
+TEST(NetworkResponseRouterTest, OnClientDisconnectedLogsDisconnectEvent) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    const SessionId expected_id = 42;
+
+    // Перехватываем std::cout (INFO-уровень логгера выводится именно туда)
+    std::ostringstream captured;
+    std::streambuf* old_cout_buf = std::cout.rdbuf(captured.rdbuf());
+    try {
+        event_bus->publish(ClientDisconnectedEvent{expected_id});
+    } catch (...) {
+        std::cout.rdbuf(old_cout_buf);  // восстанавливаем поток при исключении
+        throw;
+    }
+    std::cout.rdbuf(old_cout_buf);
+
+    const std::string output = captured.str();
+    EXPECT_FALSE(output.empty());  // было записано хотя бы одно лог-сообщение
+    EXPECT_NE(output.find("Клиент отключен"), std::string::npos);
+    EXPECT_NE(output.find(std::to_string(expected_id)), std::string::npos);
+}
+
+/// onClientDisconnected: публикация ClientDisconnectedEvent с любыми корректными
+/// ID сессии безопасна — не бросает исключений. Проверяются broadcast-маркер 0,
+/// обычные ID и максимальный uint64.
+TEST(NetworkResponseRouterTest, OnClientDisconnectedHandlesVariousIds) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    const std::vector<SessionId> ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
+
+    for (SessionId id : ids) {
+        EXPECT_NO_THROW(event_bus->publish(ClientDisconnectedEvent{id}));
+    }
+}
+
+/// onClientDisconnected: событие отключения не должно порождать никаких других
+/// сетевых событий (SendPacketEvent, NetworkMessageEvent, ClientConnectedEvent).
+TEST(NetworkResponseRouterTest, OnClientDisconnectedPublishesNoOtherEvents) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    bool unexpected_event = false;
+    auto msg_conn = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
+        unexpected_event = true;
+    });
+    auto send_conn = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent&) {
+        unexpected_event = true;
+    });
+    auto connected_conn = event_bus->subscribe<ClientConnectedEvent>([&](const ClientConnectedEvent&) {
+        unexpected_event = true;
+    });
+
+    event_bus->publish(ClientDisconnectedEvent{1});
+
+    EXPECT_FALSE(unexpected_event);
+
+    msg_conn.disconnect();
+    send_conn.disconnect();
+    connected_conn.disconnect();
+}
+
+/// onClientDisconnected: серия событий отключения не ломает маршрутизацию —
+/// последующие входящие сообщения доходят до обработчика в порядке публикации,
+/// а сами отключения не считаются сообщениями.
+TEST(NetworkResponseRouterTest, OnClientDisconnectedDoesNotBreakMessageRouting) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    std::vector<SessionId> received_sessions;
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+        received_sessions.push_back(session_id);
+    });
+
+    event_bus->publish(ClientDisconnectedEvent{10});
+    event_bus->publish(ClientDisconnectedEvent{20});
+    event_bus->publish(ClientDisconnectedEvent{30});
+
+    ASSERT_TRUE(received_sessions.empty());  // отключения не доходят до обработчика сообщений
+
+    event_bus->publish(NetworkMessageEvent{11, {0x01}});
+    event_bus->publish(NetworkMessageEvent{21, {0x02}});
+
+    const std::vector<SessionId> expected = {11, 21};
+    EXPECT_EQ(received_sessions, expected);
+}
+
+/// onClientDisconnected: публикация события отключения до регистрации внешнего
+/// обработчика безопасна — обработчик применяется только к последующим пакетам.
+TEST(NetworkResponseRouterTest, OnClientDisconnectedBeforeHandlerRegistrationIsSafe) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    EXPECT_NO_THROW(event_bus->publish(ClientDisconnectedEvent{1}));
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(ClientDisconnectedEvent{2});
+    EXPECT_EQ(handler_calls, 0);  // отключения не вызывают обработчик сообщений
+
+    event_bus->publish(NetworkMessageEvent{3, {0x03}});
+    EXPECT_EQ(handler_calls, 1);  // сообщение после регистрации доставлено
+}
+
+/// onClientDisconnected: параллельная публикация событий отключения из нескольких
+/// потоков потокобезопасна и не нарушает последующую доставку сообщений.
+TEST(NetworkResponseRouterTest, OnClientDisconnectedConcurrentPublishIsSafe) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    constexpr int kThreadCount = 4;
+    constexpr int kEventsPerThread = 250;
+
+    std::vector<std::thread> threads;
+    threads.reserve(kThreadCount);
+    for (int t = 0; t < kThreadCount; ++t) {
+        threads.emplace_back([&, t]() {
+            for (int i = 0; i < kEventsPerThread; ++i) {
+                const SessionId id = static_cast<SessionId>(t * kEventsPerThread + i + 1);
+                event_bus->publish(ClientDisconnectedEvent{id});
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    // После «стресса» событиями отключения шина и маршрутизатор остаются
+    // работоспособными: сообщение доходит до обработчика.
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+    EXPECT_EQ(handler_calls, 1);
+}
+
 /// onMessageReceived: два маршрутизатора на одной шине — событие доставляется
 /// обработчикам обоих (фиксируется поведение boost::signals2).
 TEST(NetworkResponseRouterTest, TwoRoutersOnSameBusBothReceive) {
