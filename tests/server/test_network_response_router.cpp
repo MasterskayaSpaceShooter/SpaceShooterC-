@@ -1,7 +1,13 @@
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "event_bus.h"
@@ -476,4 +482,141 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
 
     EXPECT_EQ(received_sessions, expected_sessions);
     EXPECT_EQ(received_payloads, expected_payloads);
+}
+
+// =============================================================================
+// Граничные случаи
+// =============================================================================
+
+/// onMessageReceived: два маршрутизатора на одной шине — событие доставляется
+/// обработчикам обоих (фиксируется поведение boost::signals2).
+TEST(NetworkResponseRouterTest, TwoRoutersOnSameBusBothReceive) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter first(*event_bus);
+    NetworkResponseRouter second(*event_bus);
+
+    int first_calls = 0;
+    int second_calls = 0;
+    first.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++first_calls;
+    });
+    second.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++second_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+
+    EXPECT_EQ(first_calls, 1);
+    EXPECT_EQ(second_calls, 1);
+}
+
+// =============================================================================
+// Негативные сценарии
+// =============================================================================
+
+/// onMessageReceived: события подключения, отключения и запроса на отправку
+/// НЕ приводят к вызову обработчика входящих сообщений — только
+/// NetworkMessageEvent доходит до него.
+TEST(NetworkResponseRouterTest, LifecycleAndSendEventsDoNotTriggerMessageHandler) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(ClientConnectedEvent{1, "127.0.0.1:8080"});
+    event_bus->publish(ClientDisconnectedEvent{1});
+    event_bus->publish(SendPacketEvent{1, {0xAA}});
+
+    EXPECT_EQ(handler_calls, 0);  // ни одно из этих событий не является сообщением
+
+    event_bus->publish(NetworkMessageEvent{1, {0xBB}});
+    EXPECT_EQ(handler_calls, 1);  // только NetworkMessageEvent
+}
+
+/// onMessageReceived: исключение, брошенное внутри обработчика,
+/// распространяется через publish() наружу к вызывающему коду
+/// (фиксация текущей политики обработки ошибок).
+TEST(NetworkResponseRouterTest, HandlerExceptionPropagatesToPublisher) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    router.setMessageHandler([](SessionId, std::vector<uint8_t>) {
+        throw std::runtime_error("handler failure");
+    });
+
+    EXPECT_THROW(event_bus->publish(NetworkMessageEvent{1, {0x01}}), std::runtime_error);
+}
+
+// =============================================================================
+// Многопоточность и реентерабельность
+// =============================================================================
+
+/// onMessageReceived: параллельная публикация из нескольких потоков безопасна
+/// (EventBus потокобезопасен); все сообщения доходят до обработчика без потерь
+/// и дубликатов.
+TEST(NetworkResponseRouterTest, ConcurrentPublishFromMultipleThreads) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    constexpr int kThreadCount = 4;
+    constexpr int kMessagesPerThread = 250;
+
+    std::atomic<int> handler_calls{0};
+    std::mutex received_mutex;
+    std::vector<SessionId> received_sessions;
+
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+        ++handler_calls;
+        {
+            std::lock_guard<std::mutex> lock(received_mutex);
+            received_sessions.push_back(session_id);
+        }
+    });
+
+    std::vector<std::thread> threads;
+    threads.reserve(kThreadCount);
+    for (int t = 0; t < kThreadCount; ++t) {
+        threads.emplace_back([&, t]() {
+            for (int i = 0; i < kMessagesPerThread; ++i) {
+                const SessionId id = static_cast<SessionId>(t * kMessagesPerThread + i + 1);
+                event_bus->publish(NetworkMessageEvent{id, {static_cast<uint8_t>(id)}});
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(handler_calls.load(), kThreadCount * kMessagesPerThread);
+
+    // Каждое сообщение должно дойти ровно один раз (без потерь и дубликатов)
+    std::sort(received_sessions.begin(), received_sessions.end());
+    const size_t expected_total = static_cast<size_t>(kThreadCount * kMessagesPerThread);
+    ASSERT_EQ(received_sessions.size(), expected_total);
+    for (size_t i = 0; i < expected_total; ++i) {
+        EXPECT_EQ(received_sessions[i], static_cast<SessionId>(i + 1));
+    }
+}
+
+/// onMessageReceived: повторная публикация события изнутри обработчика
+/// безопасна (нет дедлока), вложенное сообщение также доставляется.
+TEST(NetworkResponseRouterTest, ReentrantPublishInsideHandler) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+        if (handler_calls == 1) {
+            // Вложенная публикация изнутри обработчика
+            event_bus->publish(NetworkMessageEvent{99, {0xFF}});
+        }
+    });
+
+    EXPECT_NO_THROW(event_bus->publish(NetworkMessageEvent{1, {0x01}}));
+
+    EXPECT_EQ(handler_calls, 2);
 }
