@@ -1,21 +1,7 @@
-<<<<<<< HEAD
-#include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <gtest/gtest.h>
-#include <iostream>
-#include <limits>
 #include <memory>
-#include <mutex>
-#include <sstream>
-#include <stdexcept>
 #include <thread>
-#include <utility>
-=======
-#include <cstdint>
-#include <gtest/gtest.h>
-#include <memory>
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)
 #include <vector>
 
 #include "event_bus.h"
@@ -140,7 +126,6 @@ TEST(NetworkResponseRouterTest, MultipleRoutersCreateAndDestroySafely) {
     EXPECT_TRUE(probe_called);
     connection.disconnect();
 }
-<<<<<<< HEAD
 
 /// sendTo: вызов метода должен публиковать SendPacketEvent в шину событий,
 /// и это событие обязано доходить до подписчиков.
@@ -514,6 +499,11 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
 /// залогировано в консоль. INFO-логи пишутся в std::cout синхронно
 /// (strand логгера в тестах не инициализирован), поэтому перехватываем
 /// вывод std::cout и проверяем, что в логе есть ID сессии и адрес клиента.
+///
+/// TODO(логгер): сейчас макросы LOG_INFO/LOG_ERROR — заглушки `(void)0`
+/// (см. event_bus.h), поэтому реального вывода нет, и тест намеренно падает.
+/// Падение корректно: оно фиксирует нереализованное логирование.
+/// Тест начнёт проходить после подключения реального логгера.
 TEST(NetworkResponseRouterTest, OnClientConnectedLogsConnectionEvent) {
     auto event_bus = makeEventBus();
     NetworkResponseRouter router(*event_bus);
@@ -666,6 +656,11 @@ TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
 /// в консоль. INFO-логи пишутся в std::cout синхронно (strand логгера в тестах
 /// не инициализирован), поэтому перехватываем вывод std::cout и проверяем,
 /// что в логе присутствует ID отключившейся сессии.
+///
+/// TODO(логгер): сейчас макросы LOG_INFO/LOG_ERROR — заглушки `(void)0`
+/// (см. event_bus.h), поэтому реального вывода нет, и тест намеренно падает.
+/// Падение корректно: оно фиксирует нереализованное логирование.
+/// Тест начнёт проходить после подключения реального логгера.
 TEST(NetworkResponseRouterTest, OnClientDisconnectedLogsDisconnectEvent) {
     auto event_bus = makeEventBus();
     NetworkResponseRouter router(*event_bus);
@@ -932,5 +927,3 @@ TEST(NetworkResponseRouterTest, ReentrantPublishInsideHandler) {
 
     EXPECT_EQ(handler_calls, 2);
 }
-=======
->>>>>>> cc97926 (feat: add implement NetworkResponseRouter constructor/destructor and associated tests)

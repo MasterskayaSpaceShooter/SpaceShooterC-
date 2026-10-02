@@ -93,13 +93,15 @@ private:
 
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет подключения
     const SessionId id_;                   ///< Уникальный ID сессии
-    EventBus& event_bus_;                  ///< Шина событий сервера
-    FrameCodec& codec_;                    ///< Кодек протокола
+    // TODO(Session): поля не задействованы в стаб-реализации методов,
+    // поэтому помечены [[maybe_unused]] до момента реализации doRead()/doWrite().
+    [[maybe_unused]] EventBus& event_bus_;  ///< Шина событий сервера
+    [[maybe_unused]] FrameCodec& codec_;    ///< Кодек протокола
 
     std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
 
     std::mutex write_mutex_;                        ///< Мьютекс защиты очереди записи
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь исходящих кадров
-    bool is_writing_{false};                        ///< Флаг активности операции async_write
+    [[maybe_unused]] bool is_writing_{false};       ///< Флаг активности операции async_write
 };
