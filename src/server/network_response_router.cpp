@@ -40,3 +40,9 @@ void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> pa
     // Формируем и публикуем событие отправки пакета целевому клиенту
     event_bus_.publish(SendPacketEvent{session_id, std::move(payload)});
 }
+
+void NetworkResponseRouter::broadcast(std::vector<uint8_t> payload) {
+    // Формируем и публикуем событие массовой рассылки пакета всем клиентам.
+    // session_id = 0 используется как маркер Broadcast.
+    event_bus_.publish(SendPacketEvent{0, std::move(payload)});
+}
