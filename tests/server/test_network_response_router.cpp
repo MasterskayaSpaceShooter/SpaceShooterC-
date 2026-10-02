@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -264,4 +265,215 @@ TEST(NetworkResponseRouterTest, SendToMultipleCallsPublishSeparateEvents) {
 
     EXPECT_EQ(event_count, 10);
     connection.disconnect();
+}
+
+/// setMessageHandler: зарегистрированный обработчик вызывается синхронно при
+/// публикации NetworkMessageEvent и получает точные session_id и payload.
+TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesHandlerWithSessionAndPayload) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    bool handler_called = false;
+    const SessionId expected_session = 77;
+    const std::vector<uint8_t> expected_payload = {0xAA, 0xBB, 0xCC, 0xDD};
+
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
+        handler_called = true;
+        EXPECT_EQ(session_id, expected_session);
+        EXPECT_EQ(payload, expected_payload);
+    });
+
+    event_bus->publish(NetworkMessageEvent{expected_session, expected_payload});
+
+    // Вызов происходит синхронно, внутри publish().
+    EXPECT_TRUE(handler_called);
+}
+
+/// setMessageHandler: обработчик применяется только к сообщениям, опубликованным
+/// ПОСЛЕ регистрации; ранее опубликованные пакеты не воспроизводятся.
+TEST(NetworkResponseRouterTest, SetMessageHandlerAppliesOnlyToSubsequentMessages) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});  // до регистрации — теряется
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{2, {0x02}});
+
+    EXPECT_EQ(handler_calls, 1);  // только сообщение после регистрации
+}
+
+/// setMessageHandler: повторный вызов заменяет предыдущий обработчик —
+/// вызывается только последний зарегистрированный колбэк.
+TEST(NetworkResponseRouterTest, SetMessageHandlerReplacesPreviousHandler) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    bool first_called = false;
+    bool second_called = false;
+
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        first_called = true;
+    });
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        second_called = true;
+    });
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+
+    EXPECT_FALSE(first_called);
+    EXPECT_TRUE(second_called);
+}
+
+/// setMessageHandler: пустой payload является корректным входящим кадром —
+/// обработчик вызывается и получает пустой вектор байт.
+TEST(NetworkResponseRouterTest, SetMessageHandlerWithEmptyPayloadInvokesHandler) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    bool handler_called = false;
+    std::vector<uint8_t> received_payload = {0xFF};
+
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
+        handler_called = true;
+        received_payload = std::move(payload);
+    });
+
+    event_bus->publish(NetworkMessageEvent{5, {}});
+
+    EXPECT_TRUE(handler_called);
+    EXPECT_TRUE(received_payload.empty());
+}
+
+/// setMessageHandler: передача пустого обработчика (nullptr) безопасна —
+/// входящие сообщения игнорируются без исключений, а после этого можно
+/// зарегистрировать новый рабочий обработчик.
+TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsNullHandler) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    router.setMessageHandler(nullptr);  // пустой std::function
+
+    EXPECT_NO_THROW(event_bus->publish(NetworkMessageEvent{1, {0x01}}));
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{2, {0x02}});
+
+    EXPECT_EQ(handler_calls, 1);
+}
+
+/// setMessageHandler: одно входящее сообщение вызывает обработчик ровно один раз.
+TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesOncePerMessage) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    int handler_calls = 0;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        ++handler_calls;
+    });
+
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+
+    EXPECT_EQ(handler_calls, 1);
+}
+
+/// setMessageHandler: session_id любого значения (0 — broadcast-маркер, обычный,
+/// максимальный uint64) доходит до обработчика без искажений.
+TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsVariousSessionIds) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    const std::vector<SessionId> expected_ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
+    std::vector<SessionId> received_ids;
+
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+        received_ids.push_back(session_id);
+    });
+
+    for (SessionId id : expected_ids) {
+        event_bus->publish(NetworkMessageEvent{id, {0x00}});
+    }
+
+    EXPECT_EQ(received_ids, expected_ids);
+}
+
+/// setMessageHandler: крупный payload (64 КБ) передаётся обработчику
+/// без потерь и искажений.
+TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsLargePayloadUnchanged) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    std::vector<uint8_t> large_payload(64 * 1024);
+    for (size_t i = 0; i < large_payload.size(); ++i) {
+        large_payload[i] = static_cast<uint8_t>(i % 251);
+    }
+
+    std::vector<uint8_t> received_payload;
+    router.setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
+        received_payload = std::move(payload);
+    });
+
+    event_bus->publish(NetworkMessageEvent{9, large_payload});
+
+    EXPECT_EQ(received_payload, large_payload);
+}
+
+/// setMessageHandler: обработчик можно передать как в виде обычной лямбды,
+/// так и в виде заранее созданного std::function (lvalue или rvalue) —
+/// все варианты работают одинаково, а новая регистрация заменяет старую.
+TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsStdFunction) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    int first_calls = 0;
+    NetworkResponseRouter::MessageHandler handler = [&](SessionId, std::vector<uint8_t>) {
+        ++first_calls;
+    };
+
+    router.setMessageHandler(handler);  // lvalue std::function
+    event_bus->publish(NetworkMessageEvent{1, {0x01}});
+    EXPECT_EQ(first_calls, 1);
+
+    int second_calls = 0;
+    router.setMessageHandler(  // временный std::function (rvalue)
+        NetworkResponseRouter::MessageHandler{[&](SessionId, std::vector<uint8_t>) {
+            ++second_calls;
+        }});
+
+    event_bus->publish(NetworkMessageEvent{2, {0x02}});
+    EXPECT_EQ(first_calls, 1);  // прежний обработчик заменён
+    EXPECT_EQ(second_calls, 1);
+}
+
+/// setMessageHandler: несколько подряд идущих сообщений обрабатываются
+/// в порядке публикации.
+TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
+    auto event_bus = makeEventBus();
+    NetworkResponseRouter router(*event_bus);
+
+    std::vector<SessionId> received_sessions;
+    std::vector<std::vector<uint8_t>> received_payloads;
+
+    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
+        received_sessions.push_back(session_id);
+        received_payloads.push_back(std::move(payload));
+    });
+
+    for (SessionId i = 1; i <= 5; ++i) {
+        event_bus->publish(NetworkMessageEvent{i, {static_cast<uint8_t>(i)}});
+    }
+
+    const std::vector<SessionId> expected_sessions = {1, 2, 3, 4, 5};
+    const std::vector<std::vector<uint8_t>> expected_payloads = {{1}, {2}, {3}, {4}, {5}};
+
+    EXPECT_EQ(received_sessions, expected_sessions);
+    EXPECT_EQ(received_payloads, expected_payloads);
 }
