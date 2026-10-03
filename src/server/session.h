@@ -1,14 +1,15 @@
 #pragma once
+#include <atomic>
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <vector>
 
+#include "event_bus.h"
+#include "frame_codec.h"
 #include "network_events.h"
-
-class FrameCodec;
-class EventBus;
 
 /**
  * @brief Класс асинхронной сетевой сессии подключенного клиента.
@@ -29,7 +30,7 @@ public:
      * @param event_bus Входные данные: Ссылка на шину событий для публикации кадров и дисконнектов.
      * @param codec Входные данные: Ссылка на кодек нарезки кадров.
      */
-    Session(boost::asio::ip::tcp::socket socket, SessionId id, EventBus& event_bus, FrameCodec& codec);
+    Session(boost::asio::ip::tcp::socket socket, SessionId id, events::EventBus& event_bus, network::FrameCodec& codec);
 
     /**
      * @brief Деструктор сессии.
@@ -93,12 +94,14 @@ private:
 
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет подключения
     const SessionId id_;                   ///< Уникальный ID сессии
-    EventBus& event_bus_;                  ///< Шина событий сервера
-    FrameCodec& codec_;                    ///< Кодек протокола
+    events::EventBus& event_bus_;          ///< Шина событий сервера
+    network::FrameCodec& codec_;           ///< Кодек протокола
 
-    std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
+    // std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
+    boost::beast::flat_buffer read_buffer_;          ///< накопитель
 
+    std::atomic<bool> closed_{false};               ///< Флаг активности потока
     std::mutex write_mutex_;                        ///< Мьютекс защиты очереди записи
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь исходящих кадров
     bool is_writing_{false};                        ///< Флаг активности операции async_write
