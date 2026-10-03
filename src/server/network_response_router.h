@@ -1,7 +1,9 @@
 #pragma once
+
 #include <functional>
 #include <limits>
 #include <memory>
+#include <shared_mutex>
 #include <utility>
 #include <vector>
 
@@ -35,7 +37,9 @@ public:
 
     /**
      * @brief Регистрирует внешний обработчик входящих декодированных кадров.
-     * @details Взаимодействует с полем: message_handler_.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Запись выполняется под эксклюзивной блокировкой для защиты от гонок
+     *          с одновременным чтением в onMessageReceived().
      * @param handler Входные данные: Функция-колбэк вида void(SessionId, vector<uint8_t>).
      * @outputs Выходных значений нет.
      */
@@ -70,7 +74,9 @@ private:
 
     /**
      * @brief Внутренний обработчик прихода входящего кадра от клиента.
-     * @details Взаимодействует с полем: message_handler_. Вызывает зарегистрированный колбэк.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Копирует обработчик под разделяемой блокировкой и вызывает его вне блокировки,
+     *          чтобы избежать долгого удержания мьютекса и дедлоков.
      * @param event Входные данные: Структура события NetworkMessageEvent.
      * @outputs Выходных значений нет.
      */
@@ -93,6 +99,7 @@ private:
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
     events::EventBus& event_bus_;  ///< Шина событий
+    mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
     MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
     std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
 };
