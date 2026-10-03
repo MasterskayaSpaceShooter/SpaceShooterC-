@@ -12,12 +12,18 @@ NetworkResponseRouter::~NetworkResponseRouter() {
 }
 
 void NetworkResponseRouter::setMessageHandler(MessageHandler handler) {
+    std::unique_lock<std::shared_mutex> lock(message_handler_mutex_);
     message_handler_ = std::move(handler);
 }
 
 void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) {
-    if (message_handler_) {
-        message_handler_(event.session_id, event.payload);
+    MessageHandler handler;
+    {
+        std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);
+        handler = message_handler_;
+    }
+    if (handler) {
+        handler(event.session_id, event.payload);
     }
 }
 
