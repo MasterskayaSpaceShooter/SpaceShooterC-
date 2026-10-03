@@ -6,61 +6,112 @@
 #include "frame_codec.h"
 #include "logger.h"
 
-Session::Session(boost::asio::ip::tcp::socket socket, SessionId id, EventBus& event_bus, FrameCodec& codec) :
-    socket_(std::move(socket)), id_(id), event_bus_(event_bus), codec_(codec) {}
+Session::Session(boost::asio::ip::tcp::socket socket,
+                 SessionId id,
+                 events::EventBus& event_bus,
+                 network::FrameCodec& codec) :
+    socket_(std::move(socket)), id_(id), event_bus_(event_bus), codec_(codec) {
+    LOG_INFO("Session created");
+}
 
 Session::~Session() {
-    // LOG_INFO("Session destroyed");
+    close();
+    LOG_INFO("Session destroyed");
 }
 
 void Session::start() {
+    if (closed_.load()) {
+        LOG_ERROR("Session closed");
+        return;
+    }
+    LOG_INFO("Session started");
     doRead();
 }
 
-/**
- * @brief Потокобезопасно ставит кадр в очередь отправки клиенту.
- * @details Взаимодействует с полями: write_queue_, write_mutex_, is_writing_.
- *          Запускает doWrite(), если в момент вызова отправка не идет.
- * @param data Входные данные: Массив байт отправляемого кадра.
- * @outputs Выходных значений нет.
- */
 void Session::send(std::vector<uint8_t> data) {
-    std::lock_guard lock(write_mutex_);
-    write_queue_.push(data);
+    if (closed_.load()) {
+        LOG_ERROR("Session closed");
+        return;
+    }
+    bool should_start_write = false;
+    {
+        std::lock_guard<std::mutex> lock(write_mutex_);
+        write_queue_.push(std::move(data));
 
-    if (!is_writing_) {
+        if (!is_writing_) {
+            is_writing_ = true;
+            should_start_write = true;
+        }
+    }
+    if (should_start_write) {
         doWrite();
     }
+    LOG_INFO("Data in the queue");
 }
 
 void Session::close() {
-    socket_.close();
-    // event_bus_.publish(ClientDisconnectedEvent{id_});
+    if (closed_.exchange(true)) {
+        return;
+    }
+    boost::system::error_code ec;
+    socket_.close(ec);
+    LOG_INFO("Session closed");
+    event_bus_.publish(ClientDisconnectedEvent{id_});
 }
 
 void Session::doRead() {
-    if (!socket_.is_open()) {
-        // LOG_ERR("Socket failed in session");
-        return;
-    }
     socket_.async_read_some(
-        boost::asio::buffer(read_buffer_),
+        read_buffer_.prepare(READ_BLOCK_SIZE),
         [self = shared_from_this()](const boost::system::error_code& error, std::size_t bytes_transferred) {
             if (error) {
+                LOG_ERROR("Session read error");
                 self->close();
                 return;
             }
 
-            auto mb = self->flat_buffer_.prepare(bytes_transferred);
-            std::memcpy(mb.data(), self->read_buffer_.data(), bytes_transferred);
-            self->flat_buffer_.commit(bytes_transferred);
+            self->read_buffer_.commit(bytes_transferred);
 
-            self->codec_.decode(self->flat_buffer_, [self](const std::vector<uint8_t>& payload) {
-                self->event_bus_.publish(NetworkMessageEvent{self->id_, payload});
+            network::FrameCodec::decode(self->read_buffer_, [self](network::PayloadView payload) {
+                std::vector<uint8_t> frame_data(payload.begin(), payload.end());
+                self->event_bus_.publish(NetworkMessageEvent{self->id_, frame_data});
             });
 
             self->doRead();
         });
 }
 
-void Session::doWrite() {}
+void Session::doWrite() {
+    std::vector<uint8_t> payload;
+    {
+        std::lock_guard lock(write_mutex_);
+        if (write_queue_.empty()) {
+            is_writing_ = false;
+            return;
+        }
+        payload = std::move(write_queue_.front());
+        write_queue_.pop();
+    }
+
+    try {
+        auto frame = network::FrameCodec::encode(std::move(payload));
+        auto frame_ptr = std::make_shared<network::FrameCodec::Frame>(std::move(frame));
+
+        boost::asio::async_write(
+            socket_,
+            frame_ptr->buffers(),
+            [self = shared_from_this(), frame_ptr](const boost::system::error_code& ec, std::size_t) {
+                if (ec) {
+                    self->close();
+                    return;
+                }
+                self->doWrite();
+            });
+    } catch (...) {
+        LOG_ERROR("Session encode failed");
+        {
+            std::lock_guard lock(write_mutex_);
+            is_writing_ = false;
+        }
+        close();
+    }
+}

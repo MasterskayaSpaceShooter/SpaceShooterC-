@@ -11,14 +11,7 @@
 #include <utility>
 #include <vector>
 
-// Заглушки для логирования
-#ifndef LOG_INFO
-#define LOG_INFO(msg) (void)0
-#endif
-
-#ifndef LOG_ERROR
-#define LOG_ERROR(msg) (void)0
-#endif
+#include "logger.h"
 
 namespace events {
 
@@ -128,10 +121,10 @@ public:
         auto& holder = getOrCreateSignal<EventType>();
         auto conn = holder.signal.connect(std::forward<Callback>(callback));
 
-        LOG_INFO(std::format("[EventBus] subscribe: type={}, id={}, connected={}",
-                             typeid(EventType).name(),
-                             EventTypeIdCounter::get<EventType>(),
-                             conn.connected()));
+        LOG_INFO("[EventBus] subscribe: type={}, id={}, connected={}",
+                 typeid(EventType).name(),
+                 EventTypeIdCounter::get<EventType>(),
+                 conn.connected());
 
         return conn;
     }
@@ -157,14 +150,14 @@ public:
             std::shared_lock<std::shared_mutex> lock(mutex_);
             const size_t type_id = EventTypeIdCounter::get<EventType>();
 
-            LOG_INFO(std::format("[EventBus] publish<{}>: id={}, signals_.size()={}, has signal={}",
-                                 typeid(EventType).name(),
-                                 type_id,
-                                 signals_.size(),
-                                 (type_id < signals_.size() && signals_[type_id] != nullptr)));
+            LOG_INFO("[EventBus] publish<{}>: id={}, signals_.size()={}, has signal={}",
+                     typeid(EventType).name(),
+                     type_id,
+                     signals_.size(),
+                     (type_id < signals_.size() && signals_[type_id] != nullptr));
 
             if (type_id >= signals_.size() || !signals_[type_id]) {
-                LOG_ERROR(std::format("[EventBus] Signal not found for type {}", typeid(EventType).name()));
+                LOG_ERROR("[EventBus] Signal not found for type {}", typeid(EventType).name());
 
                 return;
             }
@@ -174,7 +167,7 @@ public:
 
         /// @brief Захватываем shared_ptr, чтобы объект не удалился во время вызова сигнала
         auto self = shared_from_this();
-        LOG_INFO(std::format("Calling signal for type {}", typeid(EventType).name()));
+        LOG_INFO("Calling signal for type {}", typeid(EventType).name());
         holder_ptr->signal(event);
     }
 
@@ -186,12 +179,12 @@ public:
             std::shared_lock<std::shared_mutex> lock(mutex_);
             const auto it = event_type_ids_.find(std::type_index{typeid(event)});
 
-            LOG_INFO(std::format("[EventBus] publish(const Event&): typeid={}, found={}",
-                                 typeid(event).name(),
-                                 (it != event_type_ids_.end())));
+            LOG_INFO("[EventBus] publish(const Event&): typeid={}, found={}",
+                     typeid(event).name(),
+                     (it != event_type_ids_.end()));
 
             if (it == event_type_ids_.end()) {
-                LOG_ERROR(std::format("[EventBus] No type_id for event type {}", typeid(event).name()));
+                LOG_ERROR("[EventBus] No type_id for event type {}", typeid(event).name());
 
                 return;
             }
@@ -202,7 +195,7 @@ public:
         }
 
         auto self = shared_from_this();
-        LOG_INFO(std::format("[EventBus] Dispatching event of type {}", typeid(event).name()));
+        LOG_INFO("[EventBus] Dispatching event of type {}", typeid(event).name());
         holder_ptr->dispatch(event);
     }
 
