@@ -1,11 +1,14 @@
 #pragma once
+
 #include <functional>
+#include <limits>
 #include <memory>
+#include <shared_mutex>
+#include <utility>
 #include <vector>
 
-#include "NetworkEvents.h"
-
-class EventBus;
+#include "event_bus.h"
+#include "network_events.h"
 
 /**
  * @brief Маршрутизатор и точка управления ВСЕМИ сетевыми событиями.
@@ -24,21 +27,23 @@ public:
      * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
      * @param event_bus Входные данные: Ссылка на шину событий.
      */
-    explicit NetworkResponseRouter(EventBus& event_bus) {};
+    explicit NetworkResponseRouter(events::EventBus& event_bus);
 
     /**
      * @brief Деструктор маршрутизатора.
      * @details Освобождает подписки и ресурсы.
      */
-    ~NetworkResponseRouter() {};
+    ~NetworkResponseRouter();
 
     /**
      * @brief Регистрирует внешний обработчик входящих декодированных кадров.
-     * @details Взаимодействует с полем: message_handler_.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Запись выполняется под эксклюзивной блокировкой для защиты от гонок
+     *          с одновременным чтением в onMessageReceived().
      * @param handler Входные данные: Функция-колбэк вида void(SessionId, vector<uint8_t>).
      * @outputs Выходных значений нет.
      */
-    void setMessageHandler(MessageHandler handler) {};
+    void setMessageHandler(MessageHandler handler);
 
     /**
      * @brief Формирует и публикует событие отправки пакета конкретному клиенту.
@@ -47,7 +52,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void sendTo(SessionId session_id, std::vector<uint8_t> payload) {};
+    void sendTo(SessionId session_id, std::vector<uint8_t> payload);
 
     /**
      * @brief Формирует и публикует событие массовой рассылки пакета всем клиентам.
@@ -55,7 +60,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void broadcast(std::vector<uint8_t> payload) {};
+    void broadcast(std::vector<uint8_t> payload);
 
 private:
     /**
@@ -65,15 +70,17 @@ private:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void setupSubscriptions() {};
+    void setupSubscriptions();
 
     /**
      * @brief Внутренний обработчик прихода входящего кадра от клиента.
-     * @details Взаимодействует с полем: message_handler_. Вызывает зарегистрированный колбэк.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Копирует обработчик под разделяемой блокировкой и вызывает его вне блокировки,
+     *          чтобы избежать долгого удержания мьютекса и дедлоков.
      * @param event Входные данные: Структура события NetworkMessageEvent.
      * @outputs Выходных значений нет.
      */
-    void onMessageReceived(const NetworkMessageEvent& event) {};
+    void onMessageReceived(const NetworkMessageEvent& event);
 
     /**
      * @brief Внутренний обработчик события подключения нового клиента.
@@ -81,7 +88,7 @@ private:
      * @param event Входные данные: Структура события ClientConnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientConnected(const ClientConnectedEvent& event) {};
+    void onClientConnected(const ClientConnectedEvent& event);
 
     /**
      * @brief Внутренний обработчик события отключения клиента.
@@ -89,8 +96,10 @@ private:
      * @param event Входные данные: Структура события ClientDisconnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientDisconnected(const ClientDisconnectedEvent& event) {};
+    void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    EventBus& event_bus_;             ///< Шина событий
+    events::EventBus& event_bus_;
+    mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
     MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
+    std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
 };
