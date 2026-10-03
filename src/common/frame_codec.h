@@ -143,6 +143,7 @@ public:
      */
     static Frame encode(std::vector<std::uint8_t>&& payload) {
         throw std::runtime_error("Under construction!");
+        static_cast<void>(payload);  // <-- заглушка, чтобы убрать warning
     }
 
     /**
@@ -170,6 +171,8 @@ public:
     template <typename FrameHandler>
     static std::size_t decode(boost::beast::flat_buffer& buffer, FrameHandler&& onFrame) {
         throw std::runtime_error("Under construction!");
+        static_cast<void>(buffer);   // <-- заглушка, чтобы убрать warning
+        static_cast<void>(onFrame);  // <-- заглушка, чтобы убрать warning
     }
 };
 
