@@ -4,7 +4,14 @@
 
 #include "event_bus.h"
 #include "frame_codec.h"
-#include "logger.h"
+// Заглушки для логирования
+#ifndef LOG_INFO
+#define LOG_INFO(msg) (void)0
+#endif
+
+#ifndef LOG_ERROR
+#define LOG_ERROR(msg) (void)0
+#endif
 
 Session::Session(boost::asio::ip::tcp::socket socket,
                  SessionId id,

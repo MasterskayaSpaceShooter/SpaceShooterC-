@@ -186,6 +186,7 @@ public:
      * @throws std::length_error If @p payload.size() >
      *         @ref kMaxMessageSize.
      */
+
     [[nodiscard]] static Frame encode(std::vector<std::uint8_t>&& payload) {
         if (payload.size() > kMaxMessageSize) {
             throw std::length_error("FrameCodec::encode: payload exceeds kMaxMessageSize");
@@ -227,6 +228,7 @@ public:
      *         unchanged). Never thrown for incomplete input.
      */
     template <typename FrameHandler>
+
     [[nodiscard]] static std::size_t decode(boost::beast::flat_buffer& buffer, FrameHandler&& onFrame) {
         // Snapshot the buffer once; the codec never re-queries it while parsing
         const auto seq = buffer.data();
