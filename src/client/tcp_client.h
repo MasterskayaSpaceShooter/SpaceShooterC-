@@ -113,6 +113,8 @@ private:
      */
     void doWrite();
 
+    boost::asio::strand<boost::asio::io_context::executor_type>
+        strand_;  ///< Стрэнд для последовательного выполнения операций
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет клиента
     network::FrameCodec& codec_;           ///< Кодек протокола
 
