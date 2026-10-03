@@ -67,6 +67,9 @@ void Session::close() {
 }
 
 void Session::doRead() {
+    if (closed_.load()) {
+        return;
+    }
     socket_.async_read_some(
         read_buffer_.prepare(READ_BLOCK_SIZE),
         [self = shared_from_this()](const boost::system::error_code& error, std::size_t bytes_transferred) {
@@ -88,6 +91,9 @@ void Session::doRead() {
 }
 
 void Session::doWrite() {
+    if (closed_.load()) {
+        return;
+    }
     std::vector<uint8_t> payload;
     {
         std::lock_guard lock(write_mutex_);
@@ -115,10 +121,6 @@ void Session::doWrite() {
             });
     } catch (...) {
         LOG_ERROR("Session encode failed");
-        {
-            std::lock_guard lock(write_mutex_);
-            is_writing_ = false;
-        }
         close();
     }
 }
