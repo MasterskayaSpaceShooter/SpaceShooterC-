@@ -58,6 +58,10 @@ public:
      * @brief Инициализирует strand логгера, привязывая его к io_context приложения.
      * @details Потокобезопасен и идемпотентен: повторный вызов не перезаписывает strand_.
      *          Взаимодействует с полем: strand_, init_flag_.
+     * @warning ДОЛЖЕН быть вызван до первого log(). Иначе чтение strand_ в log()
+     *          происходит без синхронизации → data race (UB).
+     *          Обычно вызывается в main() до старта io_context.run().
+     * @warning io_context должен жить дольше Logger. Иначе strand_ становится dangling.
      * @param io_context Входные данные: Ссылка на io_context из NetworkContext.
      * @outputs Выходных значений нет.
      */
@@ -71,6 +75,11 @@ public:
     /**
      * @brief Потокобезопасно ставит задачу печати лога в очередь strand_.
      * @details Взаимодействует с полем: strand_.
+     * @note Logger — синглтон на статике, живёт до конца программы. this валиден
+     *       на момент выполнения handler'ов. weak_from_this() не применяется —
+     *       Logger не управляется shared_ptr.
+     * @note strand_ читается без синхронизации. Требуется, чтобы init() был вызван
+     *       до первого log() — см. docstring init().
      * @param level Входные данные: Уровень лога (DEBUG, INFO, WARN, ERROR).
      * @param loc Входные данные: Метаданные исходного кода (файл, строка, функция).
      * @param message Входные данные: Отформатированный текст сообщения.
@@ -170,8 +179,19 @@ private:
         }
     }
 
+    /**
+     * @brief Strand для сериализации задач логирования.
+     * @note Используется вместо std::mutex: mutex в синглтоне Logger был бы
+     *       глобальным на весь сервер, что запрещено правилами. Strand не
+     *       блокирует потоки, а ставит задачи в очередь io_context.
+     * @note Инициализируется в init(). До init() — nullptr, тогда log()
+     *       работает синхронно (fallback).
+     * @warning strand_ читается в log() без синхронизации. Требуется, чтобы
+     *          init() был вызван до первого log() — см. docstring init().
+     */
     std::unique_ptr<boost::asio::strand<boost::asio::io_context::executor_type>> strand_;
-    std::once_flag init_flag_;
+
+    std::once_flag init_flag_;  ///< Защита от повторной инициализации strand_.
 };
 
 // ============================================================================
