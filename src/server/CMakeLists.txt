@@ -1,2 +1,2 @@
-add_executable(server_app main.cpp session.cpp)
+add_executable(server_app main.cpp session.cpp session_registry.cpp session_registry.h)
 target_link_libraries(server_app PRIVATE common)
