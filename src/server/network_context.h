@@ -1,5 +1,9 @@
 #pragma once
+#include <algorithm>
+#include <atomic>
 #include <boost/asio.hpp>
+#include <cassert>
+#include <iostream>
 #include <thread>
 #include <vector>
 
@@ -18,15 +22,16 @@ public:
      * @param thread_count Входные данные: Количество рабочих потоков в пуле (по умолчанию равно числу ядер CPU).
      */
     explicit NetworkContext(size_t thread_count = std::thread::hardware_concurrency()) :
-        work_guard_(boost::asio::make_work_guard(io_context_)), thread_count_(thread_count) {}
+        work_guard_(boost::asio::make_work_guard(io_context_)), thread_count_(std::max<std::size_t>(1, thread_count)) {}
 
     /**
      * @brief Деструктор сетевого контекста.
-     * @details Взаимодействует с членами класса: автоматически вызывает метод stop() для корректного завершения
-     * потоков.
+     * @details Взаимодействует с членами класса: автоматически вызывает метод request_stop() и wait() для корректного
+     * завершения потоков.
      */
     ~NetworkContext() {
-        stop();
+        request_stop();
+        wait();
     }
 
     NetworkContext(const NetworkContext&) = delete;
@@ -39,25 +44,63 @@ public:
      * @outputs Выходных значений нет.
      */
     void start() {
-        if (!worker_threads_.empty()) {
+        if (started_.exchange(true)) {
             return;
         }
         worker_threads_.reserve(thread_count_);
         for (size_t i = 0; i < thread_count_; ++i) {
-            worker_threads_.emplace_back([this]() {
-                io_context_.run();
+            worker_threads_.emplace_back([this](std::stop_token st) {
+                while (!st.stop_requested()) {
+                    try {
+                        io_context_.run();
+                    } catch (const std::exception& e) {
+                        std::cerr << "[NetworkContext] worker exception: " << e.what() << '\n';
+                    } catch (...) {
+                        std::cerr << "[NetworkContext] worker unknown exception\n";
+                    }
+                    if (io_context_.stopped()) {
+                        break;
+                    }
+                }
             });
         }
     }
 
     /**
-     * @brief Останавливает io_context и дожидается корректного завершения всех рабочих потоков.
-     * @details Взаимодействует с полем: work_guard_, io_context_, worker_threads_.
+     * @brief Сигнализирует воркерам о необходимости остановки. Не блокирует.
+     * @details Снимает work_guard, выставляет stop_token каждому jthread, останавливает io_context. Безопасно вызывать
+     * из любого потока, включая воркеры.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void stop() {
+    void request_stop() noexcept {
+        if (!started_.exchange(false)) {
+            return;
+        }
         work_guard_.reset();
+        for (auto& t : worker_threads_) {
+            t.request_stop();
+        }
+        io_context_.stop();
+    }
+
+    /**
+     * @brief Блокирующе дожидается завершения всех воркеров.
+     * @details Взаимодействует с полем: worker_threads_.
+     * @pre started_ == false — перед вызовом должен быть вызван request_stop().
+     * @pre Вызов из потока, не являющегося воркером (иначе self-join → terminate).
+     * @note Нарушение предусловий — assert в debug, неопределённое поведение в release.
+     * @inputs Входных параметров нет.
+     * @outputs Выходных значений нет.
+     */
+    void wait() {
+        assert(!started_.load() && "NetworkContext::wait() called before request_stop()");
+        assert(!is_worker_thread() && "NetworkContext::wait() must not be called from a worker thread");
+
+        for (auto& t : worker_threads_) {
+            if (t.joinable())
+                t.join();
+        }
         worker_threads_.clear();
     }
 
@@ -72,9 +115,17 @@ public:
     }
 
 private:
+    bool is_worker_thread() const noexcept {
+        const auto id = std::this_thread::get_id();
+        return std::any_of(worker_threads_.begin(), worker_threads_.end(), [id](const std::jthread& t) {
+            return t.get_id() == id;
+        });
+    }
+
     boost::asio::io_context io_context_;  ///< Главный контекст событий Asio
     boost::asio::executor_work_guard<boost::asio::io_context::executor_type>
         work_guard_;                            ///< Защитник от пустой остановки run()
     std::vector<std::jthread> worker_threads_;  ///< Пул рабочих потоков
     size_t thread_count_;                       ///< Целевое количество потоков
+    std::atomic<bool> started_{false};          ///< Флаг состояния пула
 };
