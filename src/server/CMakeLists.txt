@@ -5,5 +5,7 @@ add_executable(server_app
     session_registry.h
     network_response_router.cpp
     network_response_router.h
+    network_context.h
 )
+
 target_link_libraries(server_app PRIVATE common)
