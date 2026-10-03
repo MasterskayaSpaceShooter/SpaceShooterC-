@@ -32,7 +32,6 @@ struct TestEvent : events::Event {
 };
 
 // Тест: событие доходит до зарегистрированного подписчика
-
 TEST(EventBusTest, EventIsDeliveredToRegisteredSubscriber) {
     auto bus = events::EventBus::create();
 
@@ -70,9 +69,11 @@ TEST(EventBusTest, SubscriberReceivesTheSameInstance) {
 
     EXPECT_EQ(observed, &event) << "Подписчик должен получить тот же экземпляр события";
 }
+
 }  // namespace kildim_tests
 
 namespace maks_tests {
+
 struct EventA : public events::Event {
     int value = 10;
 };
@@ -109,9 +110,32 @@ TEST(EventBusTest, PublishedEventB_Triger_EventB) {
 
     EXPECT_TRUE(b_events_callback);
 }
+
+TEST(EventBusTest, PublishViaBaseClassReference_TriggersCorrectCallback) {
+    auto event_bus = events::EventBus::create();
+
+    int a_count = 0;
+    int b_count = 0;
+
+    (void)event_bus->subscribe<EventA>([&](const EventA&) {
+        ++a_count;
+    });
+    (void)event_bus->subscribe<EventB>([&](const EventB&) {
+        ++b_count;
+    });
+
+    EventA concrete_a{};
+    const events::Event& base_ref = concrete_a;
+    event_bus->publish(base_ref);
+
+    EXPECT_EQ(a_count, 1);
+    EXPECT_EQ(b_count, 0);
+}
+
 }  // namespace maks_tests
 
 namespace anns_tests {
+
 TEST(EventBusTest, ScopedConnection) {
     auto event_bus = events::EventBus::create();
     int call_cnt = 0;
@@ -128,6 +152,7 @@ TEST(EventBusTest, ScopedConnection) {
     event_bus->publish(events::Event{});
     EXPECT_EQ(call_cnt, 1);
 }
+
 }  // namespace anns_tests
 
 namespace violetta_tests {
