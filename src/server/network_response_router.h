@@ -98,8 +98,8 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    events::EventBus& event_bus_;  ///< Шина событий
-    mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
-    MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
-    std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
+    events::EventBus& event_bus_;                                ///< Шина событий
+    mutable std::shared_mutex message_handler_mutex_;            ///< Защита message_handler_ от гонок чтения/записи
+    MessageHandler message_handler_;                             ///< Колбэк передатчик пакетов во внешние системы
+    std::vector<boost::signals2::connection> subscriptions_;     ///< Активные подписки на события шины
 };
