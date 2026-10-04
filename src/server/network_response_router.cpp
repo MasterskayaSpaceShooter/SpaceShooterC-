@@ -1,7 +1,5 @@
 #include "network_response_router.h"
 
-#include <utility>
-
 std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
     std::shared_ptr<NetworkResponseRouter> router(new NetworkResponseRouter(std::move(event_bus)));
     // Подписки устанавливаем после передачи объекта во владение shared_ptr:
