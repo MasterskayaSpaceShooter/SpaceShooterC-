@@ -1,7 +1,9 @@
 #pragma once
+
 #include <atomic>
 #include <boost/asio.hpp>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -17,7 +19,7 @@
 enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 /**
- * @brief Метаданные о месте вызова лога.
+ * @brief Структура, содержащая метаданные о месте вызова лога в исходном коде.
  */
 struct SourceLocation {
     const char* file{""};      ///< Имя файла (__FILE__)
@@ -26,15 +28,21 @@ struct SourceLocation {
 };
 
 /**
- * @brief Потокобезопасный асинхронный логгер на boost::asio::strand.
- * @details Использует strand вместо std::mutex: strand не блокирует потоки,
- *          а сериализует задачи через очередь io_context.
- *          Logger — синглтон на статике, живёт до конца программы.
+ * @brief Потокобезопасный асинхронный логгер на boost::asio::strand с поддержкой метаданных кода.
+ * @details Зона ответственности:
+ *          - Сериализация вывода сообщений через strand без блокировки потоков.
+ *          - Форматирование лога с указанием модуля, файла, строки и функции вызова.
+ *
+ *          Strand не является мьютексом: потоки не блокируются, а ставят задачи
+ *          в очередь io_context для последовательного выполнения.
+ *
+ *          Logger — синглтон, живёт до конца программы. this в handler'ах валиден.
  */
 class Logger {
 public:
     /**
-     * @brief Получить единственный экземпляр (Singleton).
+     * @brief Получить единственный экземпляр логгера (Singleton).
+     * @return Logger& Ссылка на синглтон.
      */
     static Logger& getInstance() {
         static Logger instance;
@@ -42,17 +50,25 @@ public:
     }
 
     ~Logger() = default;
+
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
     Logger(Logger&&) = delete;
     Logger& operator=(Logger&&) = delete;
 
     /**
-     * @brief Инициализирует strand, привязывая его к io_context приложения.
-     * @details Потокобезопасен и идемпотентен (std::once_flag + std::call_once).
+     * @brief Инициализирует strand логгера, привязывая его к io_context приложения.
+     * @details Потокобезопасен и идемпотентен: повторный вызов не перезаписывает strand_.
+     *          Взаимодействует с полями: strand_, initialized_, init_flag_.
      * @warning ДОЛЖЕН быть вызван до первого log() (для асинхронного пути).
-     *          Если init() не вызван — log() идёт через fallback под fallback_mutex_.
-     * @warning io_context должен жить дольше Logger, иначе strand_ становится dangling.
+     *          Если init() не вызван — log() работает через синхронный fallback
+     *          под fallback_mutex_. Обычно вызывается в main() до io_context.run().
+     * @warning io_context должен жить дольше Logger. Если io_context создан
+     *          локально в main — перед выходом из его области видимости вызови
+     *          Logger::getInstance().shutdown(). Иначе strand_ станет dangling
+     *          (например, log() из статических деструкторов после main).
+     * @param io_context Входные данные: Ссылка на io_context из NetworkContext.
+     * @outputs Выходных значений нет.
      */
     void init(boost::asio::io_context& io_context) {
         std::call_once(init_flag_, [this, &io_context]() {
@@ -63,24 +79,59 @@ public:
     }
 
     /**
+     * @brief Сбрасывает strand. Вызывать ДО разрушения io_context.
+     * @details После shutdown() log() уходит в синхронный fallback под
+     *          fallback_mutex_ — безопасно, даже если io_context уже мёртв.
+     * @outputs Выходных значений нет.
+     */
+    void shutdown() {
+        initialized_.store(false, std::memory_order_release);
+        strand_.reset();
+    }
+
+    /**
      * @brief Потокобезопасно ставит задачу печати лога в очередь strand_.
      * @details Если initialized_ == true — post в strand_ (асинхронно).
      *          Иначе — синхронный fallback под fallback_mutex_.
-     * @note Logger — синглтон на статике, this валиден до конца программы.
-     *       weak_from_this() не применяется — Logger не управляется shared_ptr.
+     *          Взаимодействует с полями: strand_, initialized_, fallback_mutex_.
+     * @note Logger — синглтон на статике, живёт до конца программы. this валиден
+     *       на момент выполнения handler'ов. weak_from_this() не применяется —
+     *       Logger не управляется shared_ptr.
+     * @note initialized_ читается с memory_order_acquire, init() пишет
+     *       с memory_order_release — корректная синхронизация без глобального mutex.
+     * @warning loc.file и loc.function должны быть валидны до выполнения задачи
+     *          в strand_. Для локальных данных используйте макросы LOG_*
+     *          (там __FILE__ и __FUNCTION__ — статические строки) или передавайте
+     *          строки, живущие дольше, чем задача.
+     * @param level Входные данные: Уровень лога (DEBUG, INFO, WARN, ERROR).
+     * @param loc Входные данные: Метаданные исходного кода (файл, строка, функция).
+     * @param message Входные данные: Отформатированный текст сообщения.
+     * @outputs Выходных значений нет.
      */
     void log(LogLevel level, const SourceLocation& loc, const std::string& message) {
         auto thread_id = std::this_thread::get_id();
         auto now = std::chrono::system_clock::now();
+
         if (initialized_.load(std::memory_order_acquire)) {
-            boost::asio::post(*strand_, [this, now, thread_id, level, loc, message]() {
+            // MVP: копируем const char* в std::string, чтобы избежать dangling,
+            // если вызывающий передал указатели на локальные данные.
+            std::string file_str(loc.file);
+            std::string func_str(loc.function);
+
+            boost::asio::post(*strand_, [this, now, thread_id, level, file_str, func_str, loc, message]() {
                 try {
-                    printToConsole(now, thread_id, level, loc, message);
+                    printToConsole(now,
+                                   thread_id,
+                                   level,
+                                   SourceLocation{file_str.c_str(), loc.line, func_str.c_str()},
+                                   message);
                 } catch (...) {
+                    // аварийный вывод, чтобы не уронить io_context
                     std::cerr << "Logger: exception in async handler\n";
                 }
             });
         } else {
+            // Резервный синхронный вывод (если вызвали лог до инициализации Asio)
             std::lock_guard<std::mutex> lock(fallback_mutex_);
             printToConsole(now, thread_id, level, loc, message);
         }
@@ -92,6 +143,11 @@ private:
     /**
      * @brief Форматирует и выводит лог в консоль.
      * @details std::cout для не-ERROR, std::cerr для ERROR.
+     * @param timestamp Время создания лога.
+     * @param thread_id ID потока вызова.
+     * @param level Уровень лога.
+     * @param loc Метаданные о файле, строке и функции.
+     * @param message Текст сообщения.
      */
     void printToConsole(std::chrono::system_clock::time_point timestamp,
                         std::thread::id thread_id,
@@ -180,6 +236,7 @@ private:
 
 // ============================================================================
 // МАКРОСЫ С АВТОМАТИЧЕСКИМ ЗАХВАТОМ __FILE__, __LINE__, __FUNCTION__
+// Используем __VA_OPT__ (C++20), а не GNU ##__VA_ARGS__.
 // ============================================================================
 
 /// Вспомогательный макрос сборки SourceLocation
@@ -189,13 +246,17 @@ private:
     }
 
 /// Логирование уровня INFO
-#define LOG_INFO(fmt, ...) Logger::getInstance().log(LogLevel::INFO, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_INFO(fmt, ...) \
+    Logger::getInstance().log(LogLevel::INFO, LOG_SOURCE_LOC, std::format(fmt __VA_OPT__(, ) __VA_ARGS__))
 
 /// Логирование уровня ERROR
-#define LOG_ERROR(fmt, ...) Logger::getInstance().log(LogLevel::ERROR, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_ERROR(fmt, ...) \
+    Logger::getInstance().log(LogLevel::ERROR, LOG_SOURCE_LOC, std::format(fmt __VA_OPT__(, ) __VA_ARGS__))
 
 /// Логирование уровня WARN
-#define LOG_WARN(fmt, ...) Logger::getInstance().log(LogLevel::WARN, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_WARN(fmt, ...) \
+    Logger::getInstance().log(LogLevel::WARN, LOG_SOURCE_LOC, std::format(fmt __VA_OPT__(, ) __VA_ARGS__))
 
 /// Логирование уровня DEBUG
-#define LOG_DEBUG(fmt, ...) Logger::getInstance().log(LogLevel::DEBUG, LOG_SOURCE_LOC, std::format(fmt, ##__VA_ARGS__))
+#define LOG_DEBUG(fmt, ...) \
+    Logger::getInstance().log(LogLevel::DEBUG, LOG_SOURCE_LOC, std::format(fmt __VA_OPT__(, ) __VA_ARGS__))
