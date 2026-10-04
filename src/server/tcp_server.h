@@ -3,7 +3,11 @@
 #include <boost/asio.hpp>
 #include <memory>
 
-#include "SessionRegistry.h"
+#include "session_registry.h"
+
+namespace network {
+class FrameCodec;
+}
 
 /**
  * @brief Приемник входящих TCP-подключений.
@@ -13,7 +17,7 @@
  *          - Генерация уникальных SessionId и создание объектов Session.
  *          - Публикация ClientConnectedEvent в EventBus.
  */
-class TcpServer {
+class TcpServer : public std::enable_shared_from_this<TcpServer> {
 public:
     /**
      * @brief Конструктор TCP-сервера.
@@ -23,7 +27,10 @@ public:
      * @param event_bus Входные данные: Шина событий сервера.
      * @param codec Входные данные: Кодек протокола.
      */
-    TcpServer(boost::asio::io_context& io_context, uint16_t port, EventBus& event_bus, FrameCodec& codec);
+    TcpServer(boost::asio::io_context& io_context,
+              uint16_t port,
+              std::shared_ptr<events::EventBus> event_bus,
+              network::FrameCodec& codec);
 
     /**
      * @brief Запускает процесс асинхронного прослушивания порта.
@@ -51,9 +58,9 @@ private:
      */
     void doAccept();
 
-    boost::asio::ip::tcp::acceptor acceptor_;  ///< Акцептор TCP-соединений Asio
-    EventBus& event_bus_;                      ///< Шина событий
-    FrameCodec& codec_;                        ///< Кодек протокола
-    SessionRegistry session_registry_;         ///< Реестр сессий клиентов
+    boost::asio::ip::tcp::acceptor acceptor_;      ///< Акцептор TCP-соединений Asio
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий
+    network::FrameCodec& codec_;                   ///< Кодек протокола
+    SessionRegistry session_registry_;             ///< Реестр сессий клиентов
     std::atomic<SessionId> next_session_id_{1};  ///< Счетчик для генерации уникальных SessionId
 };
