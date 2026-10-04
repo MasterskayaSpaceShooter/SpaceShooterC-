@@ -1,6 +1,8 @@
 #pragma once
+#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -116,9 +118,14 @@ private:
     boost::asio::strand<boost::asio::io_context::executor_type>
         strand_;  ///< Стрэнд для последовательного выполнения операций
     boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет клиента
+    std::shared_ptr<boost::asio::ip::tcp::resolver> resolver_;  ///< Resolver текущего подключения
     network::FrameCodec& codec_;           ///< Кодек протокола
 
-    bool is_connected_{false};  ///< Флаг подключения
+    std::atomic<bool> is_connected_{false};  ///< Флаг подключения
+    std::atomic<uint64_t> disconnect_generation_{0};
+    bool is_connecting_{false};  ///< Изменяется только на strand_
+    uint64_t active_connect_generation_{0};  ///< Поколение подключения на strand_
+    std::function<void(bool)> pending_connect_callback_;
     // std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
     boost::beast::flat_buffer read_buffer_;
     static constexpr size_t READ_BLOCK_SIZE = 4096;

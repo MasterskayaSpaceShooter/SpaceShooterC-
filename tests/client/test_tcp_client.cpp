@@ -119,6 +119,45 @@ TEST_F(TcpClientTest, ConnectSuccess) {
     EXPECT_TRUE(client_->isConnected());
 }
 
+TEST_F(TcpClientTest, ConnectWithoutCallback) {
+    client_->connect("127.0.0.1", server_->port(), {});
+
+    EXPECT_TRUE(waitFor([&] {
+        return client_->isConnected();
+    }));
+}
+
+TEST_F(TcpClientTest, DisconnectFromConnectCallbackDoesNotStartRead) {
+    std::atomic<bool> disconnected{false};
+    client_->setDisconnectCallback([&disconnected] {
+        disconnected = true;
+    });
+
+    client_->connect("127.0.0.1", server_->port(), [this](bool connected) {
+        if (connected) {
+            client_->disconnect();
+        }
+    });
+
+    EXPECT_TRUE(waitFor([&] {
+        return disconnected.load();
+    }));
+    EXPECT_FALSE(client_->isConnected());
+}
+
+TEST_F(TcpClientTest, SendBeforeConnectDoesNotPreventConnection) {
+    client_->send({1, 2, 3});
+
+    std::atomic<bool> connected{false};
+    client_->connect("127.0.0.1", server_->port(), [&connected](bool ok) {
+        connected = ok;
+    });
+
+    EXPECT_TRUE(waitFor([&] {
+        return connected.load();
+    }));
+}
+
 TEST_F(TcpClientTest, ConnectToInvalidHost) {
     std::atomic<bool> result{false};
     std::atomic<bool> callback_called{false};
@@ -154,4 +193,28 @@ TEST_F(TcpClientTest, DoubleConnectFails) {
     });
 
     EXPECT_FALSE(second.load());
+}
+
+TEST(TcpClientCancellationTest, DisconnectDuringConnectCompletesCallbackOnce) {
+    net::io_context ioc;
+    network::FrameCodec codec;
+    auto client = std::make_shared<TcpClient>(ioc, codec);
+    tcp::acceptor acceptor(ioc, tcp::endpoint(tcp::v4(), 0));
+    std::atomic<int> callback_count{0};
+    std::atomic<bool> callback_result{true};
+
+    client->connect("127.0.0.1", acceptor.local_endpoint().port(), [&](bool connected) {
+        callback_result = connected;
+        ++callback_count;
+    });
+
+    ASSERT_EQ(ioc.run_one(), 1U);
+    ASSERT_EQ(ioc.run_one(), 1U);
+
+    client->disconnect();
+    ioc.run();
+
+    EXPECT_EQ(callback_count.load(), 1);
+    EXPECT_FALSE(callback_result.load());
+    EXPECT_FALSE(client->isConnected());
 }

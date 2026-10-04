@@ -23,52 +23,97 @@ TcpClient::~TcpClient() {
 }
 
 void TcpClient::connect(const std::string& host, uint16_t port, std::function<void(bool)> on_connect) {
-    if (is_connected_) {
-        on_connect(false);
-        LOG_INFO("TcpClient is already connected");
-        return;
-    }
-
     auto client_ptr = shared_from_this();  // для удеражания клиента
+    // Используем disconnect_generation_ для предотвращения гонок при повторных подключениях
+    const auto generation = client_ptr->disconnect_generation_.load(std::memory_order_acquire);
+    
+    net::post(strand_, [client_ptr, host, port, generation, on_connect = std::move(on_connect)]() mutable {
+        if (generation != client_ptr->disconnect_generation_.load(std::memory_order_acquire)) {
+            if (on_connect) {
+                on_connect(false);
+            }
+            return;
+        }
 
-    // Создаем резолвер и асинхронно разрешаем хост и порт
-    // Если разрешение прошло успешно, подключаемся к первому доступному endpoint
-    // Если подключение прошло успешно,  начинаем читать данные
+        if (client_ptr->is_connected_.load(std::memory_order_acquire) || client_ptr->is_connecting_) {
+            if (on_connect) {
+                on_connect(false);
+            }
+            LOG_INFO("TcpClient is already connected or connecting");
+            return;
+        }
+        // Устанавливаем флаг подключения и сохраняем колбэк
+        // Создаем резолвер для асинхронного разрешения имени хоста
+        // Используем std::move для перемещения колбэка в pending_connect_callback_
+        // Используем std::make_shared для создания резолвера в куче
+        // Используем async_resolve для асинхронного разрешения имени хоста и порта
+    
 
-    auto resolver = std::make_shared<tcp::resolver>(strand_);
+        client_ptr->is_connecting_ = true;
+        client_ptr->active_connect_generation_ = generation;
+        client_ptr->pending_connect_callback_ = std::move(on_connect);
+        client_ptr->resolver_ = std::make_shared<tcp::resolver>(client_ptr->strand_);
 
-    resolver->async_resolve(
-        host,
-        std::to_string(port),
-        net::bind_executor(strand_,
-                           [client_ptr, resolver, on_connect](const boost::system::error_code& ec,
-                                                              tcp::resolver::results_type endpoint) {
-                               if (ec) {
-                                   on_connect(false);
-                                   LOG_ERROR("Invalid host address: {}", ec.message());
-                                   return;
-                               }
+        client_ptr->resolver_->async_resolve(
+            host,
+            std::to_string(port),
+            net::bind_executor(client_ptr->strand_,
+                               [client_ptr, generation](const boost::system::error_code& ec,
+                                                        tcp::resolver::results_type endpoints) {
+                                   if (generation != client_ptr->active_connect_generation_ ||
+                                       !client_ptr->is_connecting_ ||
+                                       generation != client_ptr->disconnect_generation_.load(
+                                                         std::memory_order_acquire)) {
+                                       return;
+                                   }
 
-                               // Подключаемся к первому доступному endpoint
-                               net::async_connect(
-                                   client_ptr->socket_,
-                                   endpoint,
-                                   net::bind_executor(client_ptr->strand_,
-                                                      [client_ptr, on_connect](const boost::system::error_code& ec2,
-                                                                               const tcp::endpoint& /*ep*/) {
-                                                          if (!ec2) {
-                                                              client_ptr->is_connected_ = true;
-                                                              LOG_INFO("TcpClient connected");
-                                                              on_connect(true);
-                                                              client_ptr->doRead();
-                                                          } else {
-                                                              client_ptr->is_connected_ = false;
-                                                              LOG_ERROR("Connection failed: {}", ec2.message());
-                                                              on_connect(false);
-                                                          }
-                                                      }));
-                               LOG_INFO("TcpClient is connect");
-                           }));
+                                   client_ptr->resolver_.reset();
+                                   if (ec) {
+                                       client_ptr->is_connecting_ = false;
+                                       auto callback = std::move(client_ptr->pending_connect_callback_);
+                                       LOG_ERROR("Invalid host address: {}", ec.message());
+                                       if (callback) {
+                                           callback(false);
+                                       }
+                                       return;
+                                   }
+
+                                   net::async_connect(
+                                       client_ptr->socket_,
+                                       endpoints,
+                                       net::bind_executor(
+                                           client_ptr->strand_,
+                                           [client_ptr, generation](const boost::system::error_code& connect_ec,
+                                                                    const tcp::endpoint& /*endpoint*/) {
+                                               if (generation != client_ptr->active_connect_generation_ ||
+                                                   !client_ptr->is_connecting_ ||
+                                                   generation != client_ptr->disconnect_generation_.load(
+                                                                     std::memory_order_acquire)) {
+                                                   return;
+                                               }
+
+                                               client_ptr->is_connecting_ = false;
+                                               auto callback = std::move(client_ptr->pending_connect_callback_);
+                                               if (connect_ec) {
+                                                   client_ptr->is_connected_.store(false,
+                                                                                   std::memory_order_release);
+                                                   LOG_ERROR("Connection failed: {}", connect_ec.message());
+                                                   if (callback) {
+                                                       callback(false);
+                                                   }
+                                                   return;
+                                               }
+
+                                               client_ptr->is_connected_.store(true, std::memory_order_release);
+                                               LOG_INFO("TcpClient connected");
+                                               if (callback) {
+                                                   callback(true);
+                                               }
+                                               client_ptr->doRead();
+                                           }));
+                                   LOG_INFO("TcpClient is connect");
+                               }));
+    });
 }
 
 void TcpClient::send(std::vector<uint8_t> data) {
@@ -79,36 +124,56 @@ void TcpClient::send(std::vector<uint8_t> data) {
     // Используем std::move для перемещения данных в очередь
     // Если клиент уже пишет, то просто добавляем в очередь, иначе начинаем писать
     net::post(strand_, [client_ptr, message = std::move(data)]() {
+        if (!client_ptr->is_connected_.load()) {
+            LOG_INFO("TcpClient is not connected, dropping message");
+            return;
+        }
+
         client_ptr->write_queue_.push(std::move(message));
         if (!client_ptr->is_writing_) {
             client_ptr->is_writing_ = true;
             client_ptr->doWrite();
         }
     });
-    LOG_INFO("Message sent");
 }
 
 void TcpClient::disconnect() {
     auto client_ptr = shared_from_this();
 
+    client_ptr->disconnect_generation_.fetch_add(1, std::memory_order_acq_rel);
+    const bool was_connected = client_ptr->is_connected_.exchange(false, std::memory_order_acq_rel);
+
     // Используем strand для обеспечения последовательного выполнения операций отключения
-    // Проверяем, подключен ли клиент, если нет, то просто выходим
     // Закрываем сокет и очищаем очередь сообщений
     // Вызываем пользовательский колбэк
-    net::post(strand_, [client_ptr]() {
-        if (!client_ptr->is_connected_) {
+    net::post(strand_, [client_ptr, was_connected]() {
+        const bool was_connecting = client_ptr->is_connecting_;
+        if (!was_connected && !was_connecting) {
             LOG_INFO("TcpClient is already disconnected");
             return;
         }
+
+        client_ptr->is_connecting_ = false;
+        if (client_ptr->resolver_) {
+            client_ptr->resolver_->cancel();
+            client_ptr->resolver_.reset();
+        }
+
         boost::system::error_code ec;
-        client_ptr->is_connected_ = false;
+        client_ptr->socket_.cancel(ec);
         client_ptr->socket_.close(ec);
         std::queue<std::vector<uint8_t>> empty;
         client_ptr->write_queue_.swap(empty);
         client_ptr->is_writing_ = false;
         LOG_INFO("TcpClient disconnected");
+
+        auto connect_callback = std::move(client_ptr->pending_connect_callback_);
+        if (was_connecting && connect_callback) {
+            connect_callback(false);
+        }
+
         // Вызоваем пользовательский колбэк
-        if (client_ptr->disconnect_cb_) {
+        if (was_connected && client_ptr->disconnect_cb_) {
             client_ptr->disconnect_cb_();
         }
     });
@@ -116,6 +181,10 @@ void TcpClient::disconnect() {
 
 void TcpClient::doRead() {
     auto client_ptr = shared_from_this();
+    if (!client_ptr->is_connected_.load(std::memory_order_acquire)) {
+        return;
+    }
+
     // Резервируем место в буффер(Есть ли смысл ? если зарезервировано уже в конструкторе)
     // Читаем байты асинхронно
     // Фиксируем прочитанные байты
@@ -131,13 +200,16 @@ void TcpClient::doRead() {
                     return;
                 }
                 client_ptr->read_buffer_.commit(bytes_transferred);
-                network::FrameCodec::decode(client_ptr->read_buffer_, [&client_ptr](network::PayloadView payload) {
+                network::FrameCodec::decode(client_ptr->read_buffer_, [client_ptr](network::PayloadView payload) {
                     if (client_ptr->message_cb_) {
                         std::vector<std::uint8_t> frame_data(payload.begin(), payload.end());
                         client_ptr->message_cb_(frame_data);
                     }
                 });
 
+                if (!client_ptr->is_connected_.load(std::memory_order_acquire)) {
+                    return;
+                }
                 client_ptr->doRead();
             }));
 }
@@ -158,11 +230,13 @@ void TcpClient::doWrite() {
     write_queue_.pop();
 
     auto client_ptr = shared_from_this();
-    auto frame = network::FrameCodec::encode(std::move(payload));
+    auto frame = std::make_shared<network::FrameCodec::Frame>(
+        network::FrameCodec::encode(std::move(payload)));
+    const auto buffers = frame->buffers();
 
     boost::asio::async_write(
         socket_,
-        frame.buffers(),
+        buffers,
         net::bind_executor(
             strand_,
             [client_ptr, frame = std::move(frame)](const boost::system::error_code& ec, std::size_t /*bytes*/) {
