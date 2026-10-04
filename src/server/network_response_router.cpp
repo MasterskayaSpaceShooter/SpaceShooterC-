@@ -8,8 +8,8 @@ std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared
     return router;
 }
 
-NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus)
-    : event_bus_(std::move(event_bus)) {}
+NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus) :
+    event_bus_(std::move(event_bus)) {}
 
 NetworkResponseRouter::~NetworkResponseRouter() {
     // scoped_connection автоматически отключает подписки; очищаем вектор явно
@@ -51,29 +51,26 @@ void NetworkResponseRouter::setupSubscriptions() {
     // к NetworkResponseRouter::create в network_response_router.h.
     auto self = weak_from_this();
 
-    subscriptions_.emplace_back(
-        boost::signals2::scoped_connection(event_bus_->subscribe<NetworkMessageEvent>(
-            [self](const NetworkMessageEvent& event) {
-                if (auto s = self.lock()) {
-                    s->onMessageReceived(event);
-                }
-            })));
+    subscriptions_.emplace_back(boost::signals2::scoped_connection(
+        event_bus_->subscribe<NetworkMessageEvent>([self](const NetworkMessageEvent& event) {
+            if (auto s = self.lock()) {
+                s->onMessageReceived(event);
+            }
+        })));
 
-    subscriptions_.emplace_back(
-        boost::signals2::scoped_connection(event_bus_->subscribe<ClientConnectedEvent>(
-            [self](const ClientConnectedEvent& event) {
-                if (auto s = self.lock()) {
-                    s->onClientConnected(event);
-                }
-            })));
+    subscriptions_.emplace_back(boost::signals2::scoped_connection(
+        event_bus_->subscribe<ClientConnectedEvent>([self](const ClientConnectedEvent& event) {
+            if (auto s = self.lock()) {
+                s->onClientConnected(event);
+            }
+        })));
 
-    subscriptions_.emplace_back(
-        boost::signals2::scoped_connection(event_bus_->subscribe<ClientDisconnectedEvent>(
-            [self](const ClientDisconnectedEvent& event) {
-                if (auto s = self.lock()) {
-                    s->onClientDisconnected(event);
-                }
-            })));
+    subscriptions_.emplace_back(boost::signals2::scoped_connection(
+        event_bus_->subscribe<ClientDisconnectedEvent>([self](const ClientDisconnectedEvent& event) {
+            if (auto s = self.lock()) {
+                s->onClientDisconnected(event);
+            }
+        })));
 }
 
 void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {
