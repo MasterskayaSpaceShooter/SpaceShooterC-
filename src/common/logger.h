@@ -1,9 +1,7 @@
 #pragma once
-
 #include <atomic>
 #include <boost/asio.hpp>
 #include <chrono>
-#include <filesystem>
 #include <format>
 #include <iostream>
 #include <memory>
@@ -19,7 +17,7 @@
 enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 /**
- * @brief Структура, содержащая метаданные о месте вызова лога в исходном коде.
+ * @brief Метаданные о месте вызова лога.
  */
 struct SourceLocation {
     const char* file{""};      ///< Имя файла (__FILE__)
@@ -28,21 +26,15 @@ struct SourceLocation {
 };
 
 /**
- * @brief Потокобезопасный асинхронный логгер на boost::asio::strand с поддержкой метаданных кода.
- * @details Зона ответственности:
- *          - Сериализация вывода сообщений через strand без блокировки потоков.
- *          - Форматирование лога с указанием модуля, файла, строки и функции вызова.
- *
- *          Strand не является мьютексом: потоки не блокируются, а ставят задачи
- *          в очередь io_context для последовательного выполнения.
- *
- *          Logger — синглтон, живёт до конца программы. this в handler'ах валиден.
+ * @brief Потокобезопасный асинхронный логгер на boost::asio::strand.
+ * @details Использует strand вместо std::mutex: strand не блокирует потоки,
+ *          а сериализует задачи через очередь io_context.
+ *          Logger — синглтон на статике, живёт до конца программы.
  */
 class Logger {
 public:
     /**
-     * @brief Получить единственный экземпляр логгера (Singleton).
-     * @return Logger& Ссылка на синглтон.
+     * @brief Получить единственный экземпляр (Singleton).
      */
     static Logger& getInstance() {
         static Logger instance;
@@ -50,22 +42,17 @@ public:
     }
 
     ~Logger() = default;
-
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
     Logger(Logger&&) = delete;
     Logger& operator=(Logger&&) = delete;
 
     /**
-     * @brief Инициализирует strand логгера, привязывая его к io_context приложения.
-     * @details Потокобезопасен и идемпотентен: повторный вызов не перезаписывает strand_.
-     *          Взаимодействует с полями: strand_, initialized_, init_flag_.
+     * @brief Инициализирует strand, привязывая его к io_context приложения.
+     * @details Потокобезопасен и идемпотентен (std::once_flag + std::call_once).
      * @warning ДОЛЖЕН быть вызван до первого log() (для асинхронного пути).
-     *          Если init() не вызван, log() работает через синхронный fallback
-     *          под fallback_mutex_. Обычно вызывается в main() до io_context.run().
-     * @warning io_context должен жить дольше Logger. Иначе strand_ становится dangling.
-     * @param io_context Входные данные: Ссылка на io_context из NetworkContext.
-     * @outputs Выходных значений нет.
+     *          Если init() не вызван — log() идёт через fallback под fallback_mutex_.
+     * @warning io_context должен жить дольше Logger, иначе strand_ становится dangling.
      */
     void init(boost::asio::io_context& io_context) {
         std::call_once(init_flag_, [this, &io_context]() {
@@ -77,24 +64,14 @@ public:
 
     /**
      * @brief Потокобезопасно ставит задачу печати лога в очередь strand_.
-     * @details Если init() был вызван (initialized_ == true) — задача постится
-     *          в strand_ и выполняется асинхронно. Иначе — синхронный fallback
-     *          под fallback_mutex_.
-     * @note Logger — синглтон на статике, живёт до конца программы. this валиден
-     *       на момент выполнения handler'ов. weak_from_this() не применяется —
-     *       Logger не управляется shared_ptr.
-     * @note initialized_ читается с memory_order_acquire, init() пишет
-     *       с memory_order_release — обеспечивает корректную синхронизацию
-     *       без глобального mutex.
-     * @param level Входные данные: Уровень лога (DEBUG, INFO, WARN, ERROR).
-     * @param loc Входные данные: Метаданные исходного кода (файл, строка, функция).
-     * @param message Входные данные: Отформатированный текст сообщения.
-     * @outputs Выходных значений нет.
+     * @details Если initialized_ == true — post в strand_ (асинхронно).
+     *          Иначе — синхронный fallback под fallback_mutex_.
+     * @note Logger — синглтон на статике, this валиден до конца программы.
+     *       weak_from_this() не применяется — Logger не управляется shared_ptr.
      */
     void log(LogLevel level, const SourceLocation& loc, const std::string& message) {
         auto thread_id = std::this_thread::get_id();
         auto now = std::chrono::system_clock::now();
-
         if (initialized_.load(std::memory_order_acquire)) {
             boost::asio::post(*strand_, [this, now, thread_id, level, loc, message]() {
                 try {
@@ -114,19 +91,14 @@ private:
 
     /**
      * @brief Форматирует и выводит лог в консоль.
-     * @details Взаимодействует с std::cout / std::cerr.
-     * @param timestamp Время создания лога.
-     * @param thread_id ID потока вызова.
-     * @param level Уровень лога.
-     * @param loc Метаданные о файле, строке и функции.
-     * @param message Текст сообщения.
+     * @details std::cout для не-ERROR, std::cerr для ERROR.
      */
     void printToConsole(std::chrono::system_clock::time_point timestamp,
                         std::thread::id thread_id,
                         LogLevel level,
                         const SourceLocation& loc,
                         const std::string& message) {
-        // Время: YYYY-MM-DD HH:MM:SS.mmm
+        // Время в формате YYYY-MM-DD HH:MM:SS.mmm
         auto time_c = std::chrono::system_clock::to_time_t(timestamp);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
@@ -146,6 +118,7 @@ private:
                                            tm_buf.tm_sec,
                                            ms.count());
 
+        // Уровень: выравниваем до 5 символов (INFO_, WARN_, ERROR, DEBUG).
         std::string level_str;
         switch (level) {
             case LogLevel::DEBUG:
@@ -166,16 +139,15 @@ private:
         ss << thread_id;
         const std::string thread_id_str = ss.str();
 
-        // Извлекаем filename и module без аллокаций через std::string_view.
-        // Например: "src/network/Session.cpp" -> filename="Session.cpp", module="Session"
+        // filename и module через std::string_view — без аллокаций.
+        // "src/network/Session.cpp" → filename="Session.cpp", module="Session"
         std::string_view file_view{loc.file};
         auto slash = file_view.find_last_of("/\\");
         std::string_view filename = (slash == std::string_view::npos) ? file_view : file_view.substr(slash + 1);
-
         auto dot = filename.find_last_of('.');
         std::string_view module = (dot == std::string_view::npos) ? filename : filename.substr(0, dot);
 
-        // Формат лога: [TIME][TH:xxxx][MODULE][FILE:LINE][FUNC][LEVEL] message
+        // Формат: [TIME][TH:xxxx][MODULE][FILE:LINE][FUNC][LEVEL] message
         std::string formatted = std::format("[{}][TH:{}][{}][{}:{}][{}()][{}] {}\n",
                                             time_str,
                                             thread_id_str,
@@ -193,31 +165,17 @@ private:
         }
     }
 
-    /**
-     * @brief Strand для сериализации задач логирования.
-     * @note Используется вместо std::mutex: mutex в синглтоне Logger был бы
-     *       глобальным на весь сервер, что запрещено правилами. Strand не
-     *       блокирует потоки, а ставит задачи в очередь io_context.
-     * @note Инициализируется в init() под std::call_once. До init() — nullptr.
-     *       Флаг initialized_ (atomic) показывает, что strand_ готов к использованию.
-     */
+    /// Strand для сериализации задач логирования. Заменяет std::mutex.
     std::unique_ptr<boost::asio::strand<boost::asio::io_context::executor_type>> strand_;
 
-    /**
-     * @brief Флаг готовности strand_ (устанавливается в init()).
-     * @note memory_order_release в init(), memory_order_acquire в log() —
-     *       корректная синхронизация без глобального mutex.
-     */
+    /// Флаг готовности strand_. memory_order_release в init(), acquire в log().
     std::atomic<bool> initialized_{false};
 
-    /**
-     * @brief Мьютекс только для синхронного fallback (когда strand_ ещё не готов).
-     * @note Не глобальный mutex на весь сервер: используется только в fallback-пути
-     *       до вызова init(). После init() log() идёт через strand_ без блокировки.
-     */
+    /// Мьютекс только для синхронного fallback (когда strand_ ещё не готов).
     std::mutex fallback_mutex_;
 
-    std::once_flag init_flag_;  ///< Защита от повторной инициализации strand_.
+    /// Защита от повторной инициализации strand_.
+    std::once_flag init_flag_;
 };
 
 // ============================================================================
