@@ -195,7 +195,7 @@ void TcpClient::doRead() {
                     return;
                 }
                 client_ptr->read_buffer_.commit(bytes_transferred);
-                network::FrameCodec::decode(client_ptr->read_buffer_, [client_ptr](network::PayloadView payload) {
+                (void)network::FrameCodec::decode(client_ptr->read_buffer_, [client_ptr](network::PayloadView payload) {
                     if (client_ptr->message_cb_) {
                         std::vector<std::uint8_t> frame_data(payload.begin(), payload.end());
                         client_ptr->message_cb_(frame_data);
