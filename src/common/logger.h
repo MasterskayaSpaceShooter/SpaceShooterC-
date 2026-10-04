@@ -1,12 +1,14 @@
 #pragma once
-
+#include <atomic>
 #include <boost/asio.hpp>
 #include <chrono>
-#include <filesystem>
 #include <format>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 /**
@@ -15,7 +17,7 @@
 enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 /**
- * @brief Структура, содержащая метаданные о месте вызова лога в исходном коде.
+ * @brief Метаданные о месте вызова лога.
  */
 struct SourceLocation {
     const char* file{""};      ///< Имя файла (__FILE__)
@@ -24,16 +26,15 @@ struct SourceLocation {
 };
 
 /**
- * @brief Потокобезопасный асинхронный логгер на boost::asio::strand с поддержкой метаданных кода.
- * @details Зона ответственности:
- *          - Сериализация вывода сообщений через strand.
- *          - Форматирование лога с точным указанием файла, строки и функции вызова.
+ * @brief Потокобезопасный асинхронный логгер на boost::asio::strand.
+ * @details Использует strand вместо std::mutex: strand не блокирует потоки,
+ *          а сериализует задачи через очередь io_context.
+ *          Logger — синглтон на статике, живёт до конца программы.
  */
 class Logger {
 public:
     /**
-     * @brief Получить единственный экземпляр логгера (Singleton).
-     * @return Logger& Ссылка на синглтон.
+     * @brief Получить единственный экземпляр (Singleton).
      */
     static Logger& getInstance() {
         static Logger instance;
@@ -41,39 +42,46 @@ public:
     }
 
     ~Logger() = default;
-
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
+    Logger(Logger&&) = delete;
+    Logger& operator=(Logger&&) = delete;
 
     /**
-     * @brief Инициализирует strand логгера, привязывая его к io_context приложения.
-     * @details Взаимодействует с полем: strand_.
-     * @param io_context Входные данные: Ссылка на io_context из NetworkContext.
-     * @outputs Выходных значений нет.
+     * @brief Инициализирует strand, привязывая его к io_context приложения.
+     * @details Потокобезопасен и идемпотентен (std::once_flag + std::call_once).
+     * @warning ДОЛЖЕН быть вызван до первого log() (для асинхронного пути).
+     *          Если init() не вызван — log() идёт через fallback под fallback_mutex_.
+     * @warning io_context должен жить дольше Logger, иначе strand_ становится dangling.
      */
     void init(boost::asio::io_context& io_context) {
-        strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
-            boost::asio::make_strand(io_context));
+        std::call_once(init_flag_, [this, &io_context]() {
+            strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
+                boost::asio::make_strand(io_context));
+            initialized_.store(true, std::memory_order_release);
+        });
     }
 
     /**
      * @brief Потокобезопасно ставит задачу печати лога в очередь strand_.
-     * @details Взаимодействует с полем: strand_.
-     * @param level Входные данные: Уровень лога (DEBUG, INFO, WARN, ERROR).
-     * @param loc Входные данные: Метаданные исходного кода (файл, строка, функция).
-     * @param message Входные данные: Отформатированный текст сообщения.
-     * @outputs Выходных значений нет.
+     * @details Если initialized_ == true — post в strand_ (асинхронно).
+     *          Иначе — синхронный fallback под fallback_mutex_.
+     * @note Logger — синглтон на статике, this валиден до конца программы.
+     *       weak_from_this() не применяется — Logger не управляется shared_ptr.
      */
     void log(LogLevel level, const SourceLocation& loc, const std::string& message) {
         auto thread_id = std::this_thread::get_id();
         auto now = std::chrono::system_clock::now();
-
-        if (strand_) {
+        if (initialized_.load(std::memory_order_acquire)) {
             boost::asio::post(*strand_, [this, now, thread_id, level, loc, message]() {
-                printToConsole(now, thread_id, level, loc, message);
+                try {
+                    printToConsole(now, thread_id, level, loc, message);
+                } catch (...) {
+                    std::cerr << "Logger: exception in async handler\n";
+                }
             });
         } else {
-            // Резервный синхронный вывод (если вызвали лог до инициализации Asio)
+            std::lock_guard<std::mutex> lock(fallback_mutex_);
             printToConsole(now, thread_id, level, loc, message);
         }
     }
@@ -83,19 +91,14 @@ private:
 
     /**
      * @brief Форматирует и выводит лог в консоль.
-     * @details Взаимодействует с std::cout / std::cerr.
-     * @param timestamp Время создания лога.
-     * @param thread_id ID потока вызова.
-     * @param level Уровень лога.
-     * @param loc Метаданные о файле, строке и функции.
-     * @param message Текст сообщения.
+     * @details std::cout для не-ERROR, std::cerr для ERROR.
      */
     void printToConsole(std::chrono::system_clock::time_point timestamp,
                         std::thread::id thread_id,
                         LogLevel level,
                         const SourceLocation& loc,
                         const std::string& message) {
-        // Время: HH:MM:SS.mmm
+        // Время в формате YYYY-MM-DD HH:MM:SS.mmm
         auto time_c = std::chrono::system_clock::to_time_t(timestamp);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()) % 1000;
 
@@ -106,9 +109,16 @@ private:
         localtime_r(&time_c, &tm_buf);
 #endif
 
-        std::string time_str =
-            std::format("{:02}:{:02}:{:02}.{:03}", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, ms.count());
+        std::string time_str = std::format("{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+                                           tm_buf.tm_year + 1900,
+                                           tm_buf.tm_mon + 1,
+                                           tm_buf.tm_mday,
+                                           tm_buf.tm_hour,
+                                           tm_buf.tm_min,
+                                           tm_buf.tm_sec,
+                                           ms.count());
 
+        // Уровень: выравниваем до 5 символов (INFO_, WARN_, ERROR, DEBUG).
         std::string level_str;
         switch (level) {
             case LogLevel::DEBUG:
@@ -125,13 +135,23 @@ private:
                 break;
         }
 
-        // Извлекаем только имя файла из полного пути (например, "src/network/Session.cpp" -> "Session.cpp")
-        std::string filename = std::filesystem::path(loc.file).filename().string();
+        std::stringstream ss;
+        ss << thread_id;
+        const std::string thread_id_str = ss.str();
 
-        // Формат лога: [TIME][TH:1234][FILE:LINE][FUNC][LEVEL] message
-        std::string formatted = std::format("[{}][TH:{:>5}][{}:{}][{}()][{}] {}\n",
+        // filename и module через std::string_view — без аллокаций.
+        // "src/network/Session.cpp" → filename="Session.cpp", module="Session"
+        std::string_view file_view{loc.file};
+        auto slash = file_view.find_last_of("/\\");
+        std::string_view filename = (slash == std::string_view::npos) ? file_view : file_view.substr(slash + 1);
+        auto dot = filename.find_last_of('.');
+        std::string_view module = (dot == std::string_view::npos) ? filename : filename.substr(0, dot);
+
+        // Формат: [TIME][TH:xxxx][MODULE][FILE:LINE][FUNC][LEVEL] message
+        std::string formatted = std::format("[{}][TH:{}][{}][{}:{}][{}()][{}] {}\n",
                                             time_str,
-                                            std::hash<std::thread::id>{}(thread_id) % 10000,
+                                            thread_id_str,
+                                            module,
                                             filename,
                                             loc.line,
                                             loc.function,
@@ -145,7 +165,17 @@ private:
         }
     }
 
+    /// Strand для сериализации задач логирования. Заменяет std::mutex.
     std::unique_ptr<boost::asio::strand<boost::asio::io_context::executor_type>> strand_;
+
+    /// Флаг готовности strand_. memory_order_release в init(), acquire в log().
+    std::atomic<bool> initialized_{false};
+
+    /// Мьютекс только для синхронного fallback (когда strand_ ещё не готов).
+    std::mutex fallback_mutex_;
+
+    /// Защита от повторной инициализации strand_.
+    std::once_flag init_flag_;
 };
 
 // ============================================================================
