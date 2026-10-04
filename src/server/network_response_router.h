@@ -1,5 +1,6 @@
 #pragma once
 
+#include <format>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -17,21 +18,30 @@
  *          - Передает валидные входящие пакеты во внешний MessageHandler (для отправки в игровой ActionQueue).
  *          - Предоставляет абстрактный API отправки (sendTo, broadcast) с помощью SendPacketEvent.
  */
-class NetworkResponseRouter {
+class NetworkResponseRouter : public std::enable_shared_from_this<NetworkResponseRouter> {
 public:
+    /// Маркер массовой рассылки в SendPacketEvent (session_id == BROADCAST_SESSION_ID).
+    inline static constexpr SessionId BROADCAST_SESSION_ID = 0;
+
     /// Сигнатура внешнего слушателя входящих сетевых пакетов
     using MessageHandler = std::function<void(SessionId session_id, std::vector<uint8_t> payload)>;
 
     /**
-     * @brief Конструктор маршрутизатора.
-     * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
-     * @param event_bus Входные данные: Ссылка на шину событий.
+     * @brief Фабрика создания маршрутизатора.
+     * @details Гарантирует владение маршрутизатором через std::shared_ptr, что необходимо
+     *          для безопасной диспетчеризации событий (weak_ptr в подписках) и исключения
+     *          висячих колбэков при конкурентной публикации. Если поток T1 публикует
+     *          NetworkMessageEvent (уже скопировал список слотов и внутри signal(event)
+     *          см. event_bus.h, а поток T2 разрушает роутер — лямбда всё равно выполнится и
+     *          разыменует this уже освобождённого объекта. Это гонка → UAF/краш.
+     * @param event_bus Входные данные: Указатель на шину событий.
+     * @return std::shared_ptr<NetworkResponseRouter> Экземпляр маршрутизатора.
      */
-    explicit NetworkResponseRouter(events::EventBus& event_bus);
+    static std::shared_ptr<NetworkResponseRouter> create(std::shared_ptr<events::EventBus> event_bus);
 
     /**
      * @brief Деструктор маршрутизатора.
-     * @details Освобождает подписки и ресурсы.
+     * @details Отключает подписки на события шины (scoped_connection делает это автоматически).
      */
     ~NetworkResponseRouter();
 
@@ -63,6 +73,14 @@ public:
     void broadcast(std::vector<uint8_t> payload);
 
 private:
+    /**
+     * @brief Приватный конструктор маршрутизатора.
+     * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
+     *          Создание доступно только через фабрику create().
+     * @param event_bus Входные данные: Указатель на шину событий.
+     */
+    explicit NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus);
+
     /**
      * @brief Подписывает методы класса на события NetworkMessageEvent, ClientConnectedEvent, ClientDisconnectedEvent в
      * EventBus.
@@ -98,8 +116,8 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    events::EventBus& event_bus_;
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Владение шиной событий сервера
     mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
     MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
-    std::vector<boost::signals2::connection> subscriptions_;  ///< Активные подписки на события шины
+    std::vector<boost::signals2::scoped_connection> subscriptions_;  ///< Активные подписки на события шины
 };

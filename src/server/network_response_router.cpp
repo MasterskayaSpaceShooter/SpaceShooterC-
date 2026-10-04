@@ -1,14 +1,21 @@
 #include "network_response_router.h"
 
-NetworkResponseRouter::NetworkResponseRouter(events::EventBus& event_bus) : event_bus_(event_bus) {
-    setupSubscriptions();
+#include <utility>
+
+std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
+    std::shared_ptr<NetworkResponseRouter> router(new NetworkResponseRouter(std::move(event_bus)));
+    // Подписки устанавливаем после передачи объекта во владение shared_ptr:
+    // только тогда weak_from_this() в слотах будет корректно захватывать себя.
+    router->setupSubscriptions();
+    return router;
 }
 
+NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus)
+    : event_bus_(std::move(event_bus)) {}
+
 NetworkResponseRouter::~NetworkResponseRouter() {
-    // Отключаем все подписки на события шины
-    for (auto& connection : subscriptions_) {
-        connection.disconnect();
-    }
+    // scoped_connection автоматически отключает подписки; очищаем вектор явно
+    subscriptions_.clear();
 }
 
 void NetworkResponseRouter::setMessageHandler(MessageHandler handler) {
@@ -41,27 +48,43 @@ void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& 
 }
 
 void NetworkResponseRouter::setupSubscriptions() {
-    subscriptions_.emplace_back(event_bus_.subscribe<NetworkMessageEvent>([this](const NetworkMessageEvent& event) {
-        onMessageReceived(event);
-    }));
-
-    subscriptions_.emplace_back(event_bus_.subscribe<ClientConnectedEvent>([this](const ClientConnectedEvent& event) {
-        onClientConnected(event);
-    }));
+    // Захватываем слабый указатель на себя, чтобы не держать объект живым в слотах шины
+    // и избежать вызова на освобождённом объекте при конкурентной публикации см. примечание
+    // к NetworkResponseRouter::create в network_response_router.h.
+    auto self = weak_from_this();
 
     subscriptions_.emplace_back(
-        event_bus_.subscribe<ClientDisconnectedEvent>([this](const ClientDisconnectedEvent& event) {
-            onClientDisconnected(event);
-        }));
+        boost::signals2::scoped_connection(event_bus_->subscribe<NetworkMessageEvent>(
+            [self](const NetworkMessageEvent& event) {
+                if (auto s = self.lock()) {
+                    s->onMessageReceived(event);
+                }
+            })));
+
+    subscriptions_.emplace_back(
+        boost::signals2::scoped_connection(event_bus_->subscribe<ClientConnectedEvent>(
+            [self](const ClientConnectedEvent& event) {
+                if (auto s = self.lock()) {
+                    s->onClientConnected(event);
+                }
+            })));
+
+    subscriptions_.emplace_back(
+        boost::signals2::scoped_connection(event_bus_->subscribe<ClientDisconnectedEvent>(
+            [self](const ClientDisconnectedEvent& event) {
+                if (auto s = self.lock()) {
+                    s->onClientDisconnected(event);
+                }
+            })));
 }
 
 void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {
     // Формируем и публикуем событие отправки пакета целевому клиенту
-    event_bus_.publish(SendPacketEvent{session_id, std::move(payload)});
+    event_bus_->publish(SendPacketEvent{session_id, std::move(payload)});
 }
 
 void NetworkResponseRouter::broadcast(std::vector<uint8_t> payload) {
     // Формируем и публикуем событие массовой рассылки пакета всем клиентам.
-    // session_id = 0 используется как маркер Broadcast.
-    event_bus_.publish(SendPacketEvent{0, std::move(payload)});
+    // BROADCAST_SESSION_ID используется как маркер Broadcast.
+    event_bus_->publish(SendPacketEvent{BROADCAST_SESSION_ID, std::move(payload)});
 }

@@ -25,7 +25,7 @@ TEST(NetworkResponseRouterTest, ConstructorDoesNotThrowWithValidEventBus) {
     auto event_bus = makeEventBus();
 
     EXPECT_NO_THROW({
-        NetworkResponseRouter router(*event_bus);
+        auto router = NetworkResponseRouter::create(event_bus);
         (void)router;
     });
 }
@@ -35,13 +35,13 @@ TEST(NetworkResponseRouterTest, ConstructorDoesNotThrowWithValidEventBus) {
 /// поэтому входящий кадр доходит до внешнего обработчика.
 TEST(NetworkResponseRouterTest, ConstructorSubscribesToNetworkMessageEvent) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool handler_called = false;
     const SessionId expected_session = 42;
     const std::vector<uint8_t> expected_payload = {0xDE, 0xAD, 0xBE, 0xEF};
 
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
         handler_called = true;
         EXPECT_EQ(session_id, expected_session);
         EXPECT_EQ(payload, expected_payload);
@@ -57,7 +57,7 @@ TEST(NetworkResponseRouterTest, ConstructorSubscribesToNetworkMessageEvent) {
 /// сразу после создания NetworkResponseRouter безопасна.
 TEST(NetworkResponseRouterTest, ConstructorHandlesLifecycleEvents) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     EXPECT_NO_THROW(event_bus->publish(ClientConnectedEvent{1, "127.0.0.1:8080"}));
     EXPECT_NO_THROW(event_bus->publish(ClientDisconnectedEvent{1}));
@@ -70,8 +70,8 @@ TEST(NetworkResponseRouterTest, DestructorDisconnectsSubscriptions) {
     int handler_calls = 0;
 
     {
-        NetworkResponseRouter router(*event_bus);
-        router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+        auto router = NetworkResponseRouter::create(event_bus);
+        router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
             ++handler_calls;
         });
 
@@ -89,7 +89,7 @@ TEST(NetworkResponseRouterTest, DestructorDisconnectsSubscriptions) {
 /// NetworkResponseRouter (на неё можно подписаться и публиковать события).
 TEST(NetworkResponseRouterTest, DestructorEventBusRemainsUsable) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool probe_called = false;
     auto connection = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
@@ -108,8 +108,8 @@ TEST(NetworkResponseRouterTest, MultipleRoutersCreateAndDestroySafely) {
     auto event_bus = makeEventBus();
 
     for (int i = 0; i < 10; ++i) {
-        NetworkResponseRouter router(*event_bus);
-        router.setMessageHandler([](SessionId, std::vector<uint8_t>) {
+        auto router = NetworkResponseRouter::create(event_bus);
+        router->setMessageHandler([](SessionId, std::vector<uint8_t>) {
         });
     }
 
@@ -128,14 +128,14 @@ TEST(NetworkResponseRouterTest, MultipleRoutersCreateAndDestroySafely) {
 /// и это событие обязано доходить до подписчиков.
 TEST(NetworkResponseRouterTest, SendToPublishesSendPacketEvent) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool event_received = false;
     auto connection = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent&) {
         event_received = true;
     });
 
-    router.sendTo(42, {0x01});
+    router->sendTo(42, {0x01});
 
     EXPECT_TRUE(event_received);
     connection.disconnect();
@@ -146,7 +146,7 @@ TEST(NetworkResponseRouterTest, SendToPublishesSendPacketEvent) {
 /// (проверяются нулевой маркер broadcast, обычные ID и максимальное значение).
 TEST(NetworkResponseRouterTest, SendToForwardsSessionId) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const std::vector<SessionId> expected_ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
     std::vector<SessionId> received_ids;
@@ -155,7 +155,7 @@ TEST(NetworkResponseRouterTest, SendToForwardsSessionId) {
     });
 
     for (SessionId id : expected_ids) {
-        router.sendTo(id, {0x00});
+        router->sendTo(id, {0x00});
     }
 
     EXPECT_EQ(received_ids, expected_ids);
@@ -166,7 +166,7 @@ TEST(NetworkResponseRouterTest, SendToForwardsSessionId) {
 /// байт-в-байт совпадать с переданным массивом данных.
 TEST(NetworkResponseRouterTest, SendToForwardsPayloadBytes) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const std::vector<uint8_t> expected_payload = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF};
     std::vector<uint8_t> received_payload;
@@ -174,7 +174,7 @@ TEST(NetworkResponseRouterTest, SendToForwardsPayloadBytes) {
         received_payload = event.payload;
     });
 
-    router.sendTo(7, expected_payload);
+    router->sendTo(7, expected_payload);
 
     EXPECT_EQ(received_payload, expected_payload);
     connection.disconnect();
@@ -183,7 +183,7 @@ TEST(NetworkResponseRouterTest, SendToForwardsPayloadBytes) {
 /// sendTo: пустой payload допустим и не должен ломать публикацию события.
 TEST(NetworkResponseRouterTest, SendToAcceptsEmptyPayload) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool event_received = false;
     std::vector<uint8_t> received_payload;
@@ -192,7 +192,7 @@ TEST(NetworkResponseRouterTest, SendToAcceptsEmptyPayload) {
         received_payload = event.payload;
     });
 
-    router.sendTo(7, {});
+    router->sendTo(7, {});
 
     EXPECT_TRUE(event_received);
     EXPECT_TRUE(received_payload.empty());
@@ -202,7 +202,7 @@ TEST(NetworkResponseRouterTest, SendToAcceptsEmptyPayload) {
 /// sendTo: крупный payload (64 КБ) передаётся без потерь и искажений.
 TEST(NetworkResponseRouterTest, SendToHandlesLargePayloadWithoutCorruption) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     std::vector<uint8_t> large_payload(64 * 1024);
     for (size_t i = 0; i < large_payload.size(); ++i) {
@@ -214,7 +214,7 @@ TEST(NetworkResponseRouterTest, SendToHandlesLargePayloadWithoutCorruption) {
         received_payload = event.payload;
     });
 
-    router.sendTo(9, large_payload);
+    router->sendTo(9, large_payload);
 
     EXPECT_EQ(received_payload, large_payload);
     connection.disconnect();
@@ -224,7 +224,7 @@ TEST(NetworkResponseRouterTest, SendToHandlesLargePayloadWithoutCorruption) {
 /// (NetworkMessageEvent, ClientConnectedEvent, ClientDisconnectedEvent).
 TEST(NetworkResponseRouterTest, SendToDoesNotPublishInboundOrLifecycleEvents) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool unexpected_event = false;
     auto msg_conn = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
@@ -237,7 +237,7 @@ TEST(NetworkResponseRouterTest, SendToDoesNotPublishInboundOrLifecycleEvents) {
         unexpected_event = true;
     });
 
-    router.sendTo(1, {0x01});
+    router->sendTo(1, {0x01});
 
     EXPECT_FALSE(unexpected_event);
 
@@ -249,7 +249,7 @@ TEST(NetworkResponseRouterTest, SendToDoesNotPublishInboundOrLifecycleEvents) {
 /// sendTo: каждый вызов метода публикует отдельное событие SendPacketEvent.
 TEST(NetworkResponseRouterTest, SendToMultipleCallsPublishSeparateEvents) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     int event_count = 0;
     auto connection = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent&) {
@@ -257,7 +257,7 @@ TEST(NetworkResponseRouterTest, SendToMultipleCallsPublishSeparateEvents) {
     });
 
     for (int i = 0; i < 10; ++i) {
-        router.sendTo(static_cast<SessionId>(i), {static_cast<uint8_t>(i)});
+        router->sendTo(static_cast<SessionId>(i), {static_cast<uint8_t>(i)});
     }
 
     EXPECT_EQ(event_count, 10);
@@ -268,14 +268,14 @@ TEST(NetworkResponseRouterTest, SendToMultipleCallsPublishSeparateEvents) {
 /// равно нулю — маркеру массовой рассылки всем клиентам.
 TEST(NetworkResponseRouterTest, BroadcastUsesZeroSessionIdMarker) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     SessionId received_id = std::numeric_limits<SessionId>::max();
     auto connection = event_bus->subscribe<SendPacketEvent>([&](const SendPacketEvent& event) {
         received_id = event.session_id;
     });
 
-    router.broadcast({0x01});
+    router->broadcast({0x01});
 
     EXPECT_EQ(received_id, 0);
     connection.disconnect();
@@ -285,13 +285,13 @@ TEST(NetworkResponseRouterTest, BroadcastUsesZeroSessionIdMarker) {
 /// публикации NetworkMessageEvent и получает точные session_id и payload.
 TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesHandlerWithSessionAndPayload) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool handler_called = false;
     const SessionId expected_session = 77;
     const std::vector<uint8_t> expected_payload = {0xAA, 0xBB, 0xCC, 0xDD};
 
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
         handler_called = true;
         EXPECT_EQ(session_id, expected_session);
         EXPECT_EQ(payload, expected_payload);
@@ -307,12 +307,12 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesHandlerWithSessionAndPay
 /// ПОСЛЕ регистрации; ранее опубликованные пакеты не воспроизводятся.
 TEST(NetworkResponseRouterTest, SetMessageHandlerAppliesOnlyToSubsequentMessages) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     event_bus->publish(NetworkMessageEvent{1, {0x01}});  // до регистрации — теряется
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -325,15 +325,15 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerAppliesOnlyToSubsequentMessages
 /// вызывается только последний зарегистрированный колбэк.
 TEST(NetworkResponseRouterTest, SetMessageHandlerReplacesPreviousHandler) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool first_called = false;
     bool second_called = false;
 
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         first_called = true;
     });
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         second_called = true;
     });
 
@@ -347,12 +347,12 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerReplacesPreviousHandler) {
 /// обработчик вызывается и получает пустой вектор байт.
 TEST(NetworkResponseRouterTest, SetMessageHandlerWithEmptyPayloadInvokesHandler) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool handler_called = false;
     std::vector<uint8_t> received_payload = {0xFF};
 
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
         handler_called = true;
         received_payload = std::move(payload);
     });
@@ -368,14 +368,14 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerWithEmptyPayloadInvokesHandler)
 /// зарегистрировать новый рабочий обработчик.
 TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsNullHandler) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
-    router.setMessageHandler(nullptr);  // пустой std::function
+    router->setMessageHandler(nullptr);  // пустой std::function
 
     EXPECT_NO_THROW(event_bus->publish(NetworkMessageEvent{1, {0x01}}));
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -387,10 +387,10 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsNullHandler) {
 /// setMessageHandler: одно входящее сообщение вызывает обработчик ровно один раз.
 TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesOncePerMessage) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -403,12 +403,12 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerInvokesOncePerMessage) {
 /// максимальный uint64) доходит до обработчика без искажений.
 TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsVariousSessionIds) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const std::vector<SessionId> expected_ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
     std::vector<SessionId> received_ids;
 
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
         received_ids.push_back(session_id);
     });
 
@@ -423,7 +423,7 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsVariousSessionIds) {
 /// без потерь и искажений.
 TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsLargePayloadUnchanged) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     std::vector<uint8_t> large_payload(64 * 1024);
     for (size_t i = 0; i < large_payload.size(); ++i) {
@@ -431,7 +431,7 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsLargePayloadUnchanged) 
     }
 
     std::vector<uint8_t> received_payload;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t> payload) {
         received_payload = std::move(payload);
     });
 
@@ -445,19 +445,19 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerForwardsLargePayloadUnchanged) 
 /// все варианты работают одинаково, а новая регистрация заменяет старую.
 TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsStdFunction) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     int first_calls = 0;
     NetworkResponseRouter::MessageHandler handler = [&](SessionId, std::vector<uint8_t>) {
         ++first_calls;
     };
 
-    router.setMessageHandler(handler);  // lvalue std::function
+    router->setMessageHandler(handler);  // lvalue std::function
     event_bus->publish(NetworkMessageEvent{1, {0x01}});
     EXPECT_EQ(first_calls, 1);
 
     int second_calls = 0;
-    router.setMessageHandler(  // временный std::function (rvalue)
+    router->setMessageHandler(  // временный std::function (rvalue)
         NetworkResponseRouter::MessageHandler{[&](SessionId, std::vector<uint8_t>) {
             ++second_calls;
         }});
@@ -471,12 +471,12 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerAcceptsStdFunction) {
 /// в порядке публикации.
 TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     std::vector<SessionId> received_sessions;
     std::vector<std::vector<uint8_t>> received_payloads;
 
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t> payload) {
         received_sessions.push_back(session_id);
         received_payloads.push_back(std::move(payload));
     });
@@ -506,7 +506,7 @@ TEST(NetworkResponseRouterTest, SetMessageHandlerHandlesSequentialMessages) {
 /*
 TEST(NetworkResponseRouterTest, OnClientConnectedLogsConnectionEvent) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const SessionId expected_id = 42;
     const std::string expected_address = "192.168.1.10:12345";
@@ -536,7 +536,7 @@ TEST(NetworkResponseRouterTest, OnClientConnectedLogsConnectionEvent) {
 /// а также пустой, типовой и очень длинный адрес.
 TEST(NetworkResponseRouterTest, OnClientConnectedHandlesVariousIdsAndAddresses) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const std::vector<SessionId> ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
     const std::vector<std::string> addresses = {"", "127.0.0.1:8080", std::string(4096, 'x') + ":65535"};
@@ -552,7 +552,7 @@ TEST(NetworkResponseRouterTest, OnClientConnectedHandlesVariousIdsAndAddresses) 
 /// сетевых событий (SendPacketEvent, NetworkMessageEvent, ClientDisconnectedEvent).
 TEST(NetworkResponseRouterTest, OnClientConnectedPublishesNoOtherEvents) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool unexpected_event = false;
     auto msg_conn = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
@@ -579,10 +579,10 @@ TEST(NetworkResponseRouterTest, OnClientConnectedPublishesNoOtherEvents) {
 /// а сами подключения не считаются сообщениями.
 TEST(NetworkResponseRouterTest, OnClientConnectedDoesNotBreakMessageRouting) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     std::vector<SessionId> received_sessions;
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
         received_sessions.push_back(session_id);
     });
 
@@ -603,12 +603,12 @@ TEST(NetworkResponseRouterTest, OnClientConnectedDoesNotBreakMessageRouting) {
 /// обработчика безопасна — обработчик применяется только к последующим пакетам.
 TEST(NetworkResponseRouterTest, OnClientConnectedBeforeHandlerRegistrationIsSafe) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     EXPECT_NO_THROW(event_bus->publish(ClientConnectedEvent{1, "127.0.0.1:8080"}));
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -623,7 +623,7 @@ TEST(NetworkResponseRouterTest, OnClientConnectedBeforeHandlerRegistrationIsSafe
 /// потоков потокобезопасна и не нарушает последующую доставку сообщений.
 TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     constexpr int kThreadCount = 4;
     constexpr int kEventsPerThread = 250;
@@ -645,7 +645,7 @@ TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
     // После «стресса» событиями подключения шина и маршрутизатор остаются
     // работоспособными: сообщение доходит до обработчика.
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -667,7 +667,7 @@ TEST(NetworkResponseRouterTest, OnClientConnectedConcurrentPublishIsSafe) {
 /*
 TEST(NetworkResponseRouterTest, OnClientDisconnectedLogsDisconnectEvent) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const SessionId expected_id = 42;
 
@@ -694,7 +694,7 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedLogsDisconnectEvent) {
 /// обычные ID и максимальный uint64.
 TEST(NetworkResponseRouterTest, OnClientDisconnectedHandlesVariousIds) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     const std::vector<SessionId> ids = {0, 1, 123456789, std::numeric_limits<SessionId>::max()};
 
@@ -707,7 +707,7 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedHandlesVariousIds) {
 /// сетевых событий (SendPacketEvent, NetworkMessageEvent, ClientConnectedEvent).
 TEST(NetworkResponseRouterTest, OnClientDisconnectedPublishesNoOtherEvents) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     bool unexpected_event = false;
     auto msg_conn = event_bus->subscribe<NetworkMessageEvent>([&](const NetworkMessageEvent&) {
@@ -734,10 +734,10 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedPublishesNoOtherEvents) {
 /// а сами отключения не считаются сообщениями.
 TEST(NetworkResponseRouterTest, OnClientDisconnectedDoesNotBreakMessageRouting) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     std::vector<SessionId> received_sessions;
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
         received_sessions.push_back(session_id);
     });
 
@@ -758,12 +758,12 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedDoesNotBreakMessageRouting) 
 /// обработчика безопасна — обработчик применяется только к последующим пакетам.
 TEST(NetworkResponseRouterTest, OnClientDisconnectedBeforeHandlerRegistrationIsSafe) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     EXPECT_NO_THROW(event_bus->publish(ClientDisconnectedEvent{1}));
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -778,7 +778,7 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedBeforeHandlerRegistrationIsS
 /// потоков потокобезопасна и не нарушает последующую доставку сообщений.
 TEST(NetworkResponseRouterTest, OnClientDisconnectedConcurrentPublishIsSafe) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     constexpr int kThreadCount = 4;
     constexpr int kEventsPerThread = 250;
@@ -800,7 +800,7 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedConcurrentPublishIsSafe) {
     // После «стресса» событиями отключения шина и маршрутизатор остаются
     // работоспособными: сообщение доходит до обработчика.
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -812,15 +812,15 @@ TEST(NetworkResponseRouterTest, OnClientDisconnectedConcurrentPublishIsSafe) {
 /// обработчикам обоих (фиксируется поведение boost::signals2).
 TEST(NetworkResponseRouterTest, TwoRoutersOnSameBusBothReceive) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter first(*event_bus);
-    NetworkResponseRouter second(*event_bus);
+    auto first = NetworkResponseRouter::create(event_bus);
+    auto second = NetworkResponseRouter::create(event_bus);
 
     int first_calls = 0;
     int second_calls = 0;
-    first.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    first->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++first_calls;
     });
-    second.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    second->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++second_calls;
     });
 
@@ -835,10 +835,10 @@ TEST(NetworkResponseRouterTest, TwoRoutersOnSameBusBothReceive) {
 /// NetworkMessageEvent доходит до него.
 TEST(NetworkResponseRouterTest, LifecycleAndSendEventsDoNotTriggerMessageHandler) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
     });
 
@@ -857,9 +857,9 @@ TEST(NetworkResponseRouterTest, LifecycleAndSendEventsDoNotTriggerMessageHandler
 /// (фиксация текущей политики обработки ошибок).
 TEST(NetworkResponseRouterTest, HandlerExceptionPropagatesToPublisher) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
-    router.setMessageHandler([](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([](SessionId, std::vector<uint8_t>) {
         throw std::runtime_error("handler failure");
     });
 
@@ -871,7 +871,7 @@ TEST(NetworkResponseRouterTest, HandlerExceptionPropagatesToPublisher) {
 /// и дубликатов.
 TEST(NetworkResponseRouterTest, ConcurrentPublishFromMultipleThreads) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     constexpr int kThreadCount = 4;
     constexpr int kMessagesPerThread = 250;
@@ -880,7 +880,7 @@ TEST(NetworkResponseRouterTest, ConcurrentPublishFromMultipleThreads) {
     std::mutex received_mutex;
     std::vector<SessionId> received_sessions;
 
-    router.setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId session_id, std::vector<uint8_t>) {
         ++handler_calls;
         {
             std::lock_guard<std::mutex> lock(received_mutex);
@@ -917,10 +917,10 @@ TEST(NetworkResponseRouterTest, ConcurrentPublishFromMultipleThreads) {
 /// безопасна (нет дедлока), вложенное сообщение также доставляется.
 TEST(NetworkResponseRouterTest, ReentrantPublishInsideHandler) {
     auto event_bus = makeEventBus();
-    NetworkResponseRouter router(*event_bus);
+    auto router = NetworkResponseRouter::create(event_bus);
 
     int handler_calls = 0;
-    router.setMessageHandler([&](SessionId, std::vector<uint8_t>) {
+    router->setMessageHandler([&](SessionId, std::vector<uint8_t>) {
         ++handler_calls;
         if (handler_calls == 1) {
             // Вложенная публикация изнутри обработчика
