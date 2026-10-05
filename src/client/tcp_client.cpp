@@ -19,6 +19,24 @@ TcpClient::~TcpClient() {
     LOG_INFO("TcpClient destroyed");
 }
 
+void TcpClient::logAndDisconnect(std::string_view context_name) noexcept {
+    try {
+        throw;  // Перезапускает текущее обрабатываем исключение
+    } catch (const std::exception& ex) {
+        LOG_ERROR("Exception in {}: {}", context_name, ex.what());
+    } catch (...) {
+        LOG_ERROR("Unknown exception in {}", context_name);
+    }
+    disconnect();
+}
+
+void TcpClient::handleWriteSetupError(std::string_view context_name) noexcept {
+    is_writing_ = false;
+    std::queue<std::shared_ptr<network::FrameCodec::Frame>> rejected_writes;
+    rejected_writes.swap(write_queue_);
+    logAndDisconnect(context_name);
+}
+
 void TcpClient::connect(const std::string& host, uint16_t port, std::function<void(bool)> on_connect) {
     try {
         auto client_ptr = shared_from_this();
@@ -71,6 +89,21 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                                 }
 
                                 client_ptr->resolver_.reset();
+                                if (client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
+                                    client_ptr->is_connecting_ = false;
+                                    auto callback = std::move(client_ptr->pending_connect_callback_);
+                                    if (callback) {
+                                        try {
+                                            callback(false);
+                                        } catch (const std::exception& ex) {
+                                            LOG_ERROR("on_connect threw after disconnect request: {}", ex.what());
+                                        } catch (...) {
+                                            LOG_ERROR("on_connect threw unknown after disconnect request");
+                                        }
+                                    }
+                                    return;
+                                }
+
                                 if (ec) {
                                     client_ptr->is_connecting_ = false;
                                     auto callback = std::move(client_ptr->pending_connect_callback_);
@@ -105,6 +138,24 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                                                     return;
                                                 }
 
+                                                if (client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
+                                                    client_ptr->is_connecting_ = false;
+                                                    client_ptr->is_connected_.store(false, std::memory_order_release);
+                                                    auto callback = std::move(client_ptr->pending_connect_callback_);
+                                                    if (callback) {
+                                                        try {
+                                                            callback(false);
+                                                        } catch (const std::exception& ex) {
+                                                            LOG_ERROR("on_connect threw after disconnect request: {}",
+                                                                      ex.what());
+                                                        } catch (...) {
+                                                            LOG_ERROR(
+                                                                "on_connect threw unknown after disconnect request");
+                                                        }
+                                                    }
+                                                    return;
+                                                }
+
                                                 client_ptr->is_connecting_ = false;
                                                 auto callback = std::move(client_ptr->pending_connect_callback_);
                                                 if (connect_ec) {
@@ -134,29 +185,16 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                                                     }
                                                 }
                                                 client_ptr->doRead();
-                                            } catch (const std::exception& ex) {
-                                                LOG_ERROR("Exception in connect completion handler: {}", ex.what());
-                                                client_ptr->disconnect();
                                             } catch (...) {
-                                                LOG_ERROR("Unknown exception in connect completion handler");
-                                                client_ptr->disconnect();
+                                                client_ptr->logAndDisconnect("connect completion handler");
                                             }
                                         }));
-                            } catch (const std::exception& ex) {
-                                LOG_ERROR("Exception in resolve handler: {}", ex.what());
-                                client_ptr->disconnect();
-
                             } catch (...) {
-                                LOG_ERROR("Unknown exception in resolve handler");
-                                client_ptr->disconnect();
+                                client_ptr->logAndDisconnect("resolve handler");
                             }
                         }));
-            } catch (const std::exception& ex) {
-                LOG_ERROR("Exception in connect handler: {}", ex.what());
-                client_ptr->disconnect();
             } catch (...) {
-                LOG_ERROR("Unknown exception in connect handler");
-                client_ptr->disconnect();
+                client_ptr->logAndDisconnect("connect handler");
             }
         });
     } catch (const std::exception& ex) {
@@ -221,7 +259,8 @@ void TcpClient::disconnect() noexcept {
                 const bool was_connected = client_ptr->is_connected_.exchange(false, std::memory_order_acq_rel);
                 const bool was_connecting = client_ptr->is_connecting_;
                 const bool has_pending_writes = !client_ptr->write_queue_.empty();
-                if (!was_connected && !was_connecting && !has_pending_writes) {
+                const bool disconnect_requested = client_ptr->disconnect_requested_.load(std::memory_order_acquire);
+                if (!was_connected && !was_connecting && !has_pending_writes && !disconnect_requested) {
                     LOG_INFO("TcpClient is already disconnected");
                     return;
                 }
@@ -342,21 +381,12 @@ void TcpClient::doRead() {
                             return;
                         }
                         client_ptr->doRead();
-                    } catch (const std::exception& ex) {
-                        LOG_ERROR("Exception in read handler : {}", ex.what());
-                        client_ptr->disconnect();
                     } catch (...) {
-                        LOG_ERROR("Unknown xception in read handler");
-                        client_ptr->disconnect();
+                        client_ptr->logAndDisconnect("read handler");
                     }
                 }));
-    } catch (const std::exception& ex) {
-        // Синхронный выброс из async_read_some (напр., сокет уже закрыт)
-        LOG_ERROR("Exception in doRead : {}", ex.what());
-        disconnect();
     } catch (...) {
-        LOG_ERROR("Unknown exception in doRead");
-        disconnect();
+        logAndDisconnect("doRead setup");
     }
 }
 
@@ -416,23 +446,11 @@ void TcpClient::doWrite() {
                         } else {
                             client_ptr->is_writing_ = false;
                         }
-                    } catch (const std::exception& ex) {
-                        LOG_ERROR("Exception in write handler: {}", ex.what());
-                        client_ptr->disconnect();
                     } catch (...) {
-                        LOG_ERROR("Unknown exception in write handler");
-                        client_ptr->disconnect();
+                        client_ptr->logAndDisconnect("write handler");
                     }
                 }));
-    } catch (const std::exception& ex) {
-        LOG_ERROR("Exception in doWrite setup: {}", ex.what());
-        is_writing_ = false;
-        std::queue<std::shared_ptr<network::FrameCodec::Frame>> rejected_writes;
-        rejected_writes.swap(write_queue_);
     } catch (...) {
-        LOG_ERROR("Unknown exception in doWrite setup");
-        is_writing_ = false;
-        std::queue<std::shared_ptr<network::FrameCodec::Frame>> rejected_writes;
-        rejected_writes.swap(write_queue_);
+        handleWriteSetupError("doWrite setup");
     }
 }

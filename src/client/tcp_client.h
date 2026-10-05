@@ -8,9 +8,11 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <string_view>
 #include <vector>
 
 #include "frame_codec.h"
+#include "logger.h"
 
 /**
  * @brief Асинхронный сетевой TCP-клиент.
@@ -97,6 +99,10 @@ public:
     }
 
 private:
+    // Логирование и отключение при ошибках в контексте асинхронных операций
+    void logAndDisconnect(std::string_view context_name) noexcept;
+    void handleWriteSetupError(std::string_view context_name) noexcept;
+
     /**
      * @brief Асинхронно считывает входящие байты от сервера (async_read_some).
      * @details Взаимодействует с полями: socket_, read_buffer_, message_cb_.
