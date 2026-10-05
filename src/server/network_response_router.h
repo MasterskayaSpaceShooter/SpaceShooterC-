@@ -34,8 +34,9 @@ public:
      *          NetworkMessageEvent (уже скопировал список слотов и внутри signal(event)
      *          см. event_bus.h, а поток T2 разрушает роутер — лямбда всё равно выполнится и
      *          разыменует this уже освобождённого объекта. Это гонка → UAF/краш.
-     * @param event_bus Входные данные: Указатель на шину событий.
-     * @return std::shared_ptr<NetworkResponseRouter> Экземпляр маршрутизатора.
+     * @param event_bus Входные данные: Указатель на шину событий. Должен быть непустым (не nullptr).
+     * @return std::shared_ptr<NetworkResponseRouter> Экземпляр маршрутизатора, либо nullptr,
+     *         если event_bus == nullptr (в этом случае в лог пишется ошибка).
      */
     static std::shared_ptr<NetworkResponseRouter> create(std::shared_ptr<events::EventBus> event_bus);
 
@@ -77,7 +78,7 @@ private:
      * @brief Приватный конструктор маршрутизатора.
      * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
      *          Создание доступно только через фабрику create().
-     * @param event_bus Входные данные: Указатель на шину событий.
+     * @param event_bus Входные данные: Указатель на шину событий. Должен быть непустым (не nullptr).
      */
     explicit NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus);
 

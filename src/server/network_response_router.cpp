@@ -1,6 +1,10 @@
 #include "network_response_router.h"
 
 std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
+    if (!event_bus) {
+        LOG_ERROR("NetworkResponseRouter::create: event_bus не может быть nullptr");
+        return nullptr;
+    }
     std::shared_ptr<NetworkResponseRouter> router(new NetworkResponseRouter(std::move(event_bus)));
     // Подписки устанавливаем после передачи объекта во владение shared_ptr:
     // только тогда weak_from_this() в слотах будет корректно захватывать себя.
