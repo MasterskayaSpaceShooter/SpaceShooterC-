@@ -1,1 +1,3 @@
-namespace math {}
+namespace math {
+
+}
