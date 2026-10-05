@@ -72,6 +72,7 @@ public:
      */
     void init(boost::asio::io_context& io_context) {
         std::call_once(init_flag_, [this, &io_context]() {
+            std::lock_guard<std::mutex> lock(strand_mutex_);
             strand_ = std::make_unique<boost::asio::strand<boost::asio::io_context::executor_type>>(
                 boost::asio::make_strand(io_context));
             initialized_.store(true, std::memory_order_release);
@@ -85,6 +86,7 @@ public:
      * @outputs Выходных значений нет.
      */
     void shutdown() {
+        std::lock_guard<std::mutex> lock(strand_mutex_);
         initialized_.store(false, std::memory_order_release);
         strand_.reset();
     }
@@ -99,10 +101,8 @@ public:
      *       Logger не управляется shared_ptr.
      * @note initialized_ читается с memory_order_acquire, init() пишет
      *       с memory_order_release — корректная синхронизация без глобального mutex.
-     * @warning loc.file и loc.function должны быть валидны до выполнения задачи
-     *          в strand_. Для локальных данных используйте макросы LOG_*
-     *          (там __FILE__ и __FUNCTION__ — статические строки) или передавайте
-     *          строки, живущие дольше, чем задача.
+     * @note loc.file и loc.function копируются в std::string перед post,
+     *       поэтому могут указывать на локальные данные.
      * @param level Входные данные: Уровень лога (DEBUG, INFO, WARN, ERROR).
      * @param loc Входные данные: Метаданные исходного кода (файл, строка, функция).
      * @param message Входные данные: Отформатированный текст сообщения.
@@ -112,6 +112,7 @@ public:
         auto thread_id = std::this_thread::get_id();
         auto now = std::chrono::system_clock::now();
 
+        std::lock_guard<std::mutex> lock(strand_mutex_);
         if (initialized_.load(std::memory_order_acquire)) {
             // MVP: копируем const char* в std::string, чтобы избежать dangling,
             // если вызывающий передал указатели на локальные данные.
@@ -229,6 +230,9 @@ private:
 
     /// Мьютекс только для синхронного fallback (когда strand_ ещё не готов).
     std::mutex fallback_mutex_;
+
+    /// Мьютекс для защиты доступа к strand_
+    std::mutex strand_mutex_;
 
     /// Защита от повторной инициализации strand_.
     std::once_flag init_flag_;
