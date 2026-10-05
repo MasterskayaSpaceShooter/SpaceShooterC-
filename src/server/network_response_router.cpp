@@ -81,6 +81,6 @@ void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> pa
 
 void NetworkResponseRouter::broadcast(std::vector<uint8_t> payload) {
     // Формируем и публикуем событие массовой рассылки пакета всем клиентам.
-    // BROADCAST_SESSION_ID используется как маркер Broadcast.
-    event_bus_->publish(SendPacketEvent{BROADCAST_SESSION_ID, std::move(payload)});
+    // kBroadcastSessionId используется как маркер Broadcast.
+    event_bus_->publish(SendPacketEvent{kBroadcastSessionId, std::move(payload)});
 }

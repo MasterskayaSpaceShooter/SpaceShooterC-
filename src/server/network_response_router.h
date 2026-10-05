@@ -21,7 +21,7 @@
 class NetworkResponseRouter : public std::enable_shared_from_this<NetworkResponseRouter> {
 public:
     /// Маркер массовой рассылки в SendPacketEvent (session_id == BROADCAST_SESSION_ID).
-    inline static constexpr SessionId BROADCAST_SESSION_ID = 0;
+    inline static constexpr SessionId kBroadcastSessionId = 0;
 
     /// Сигнатура внешнего слушателя входящих сетевых пакетов
     using MessageHandler = std::function<void(SessionId session_id, std::vector<uint8_t> payload)>;
