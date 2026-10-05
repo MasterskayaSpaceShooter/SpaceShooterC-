@@ -9,7 +9,7 @@
 #include "network_events.h"
 #include "session.h"
 
-//remove after valid logger implementation
+// remove after valid logger implementation
 #ifndef LOG_INFO
 #define LOG_INFO(msg) (void)0
 #endif
@@ -55,7 +55,7 @@ void SessionRegistry::addSession(std::shared_ptr<Session> session) {
     std::lock_guard lock{registry_mutex_};
     SessionId id = session->getId();
     // if the sessions_ by this id already contains then return
-    if(sessions_.emplace(id, session).second){
+    if (sessions_.emplace(id, session).second) {
         LOG_INFO("Session added succesfully");
         return;
     }
@@ -65,7 +65,7 @@ void SessionRegistry::addSession(std::shared_ptr<Session> session) {
 void SessionRegistry::removeSession(SessionId id) {
     std::shared_ptr<Session> session;
     std::lock_guard lock{registry_mutex_};
-    if(auto it = sessions_.find(id); it != sessions_.end()){
+    if (auto it = sessions_.find(id); it != sessions_.end()) {
         session = it->second;
         sessions_.erase(id);
         session->close();
