@@ -49,7 +49,7 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
 
 void SessionRegistry::addSession(std::shared_ptr<Session> session) {
     if (session == nullptr) {
-        LOG_ERROR("session don't added, session is nullptr");
+        LOG_ERROR("session was not added, session is nullptr");
         return;
     }
     std::lock_guard lock{registry_mutex_};
@@ -63,15 +63,20 @@ void SessionRegistry::addSession(std::shared_ptr<Session> session) {
 }
 
 void SessionRegistry::removeSession(SessionId id) {
-    std::shared_ptr<Session> session;
+    std::shared_ptr<Session> session_to_remove;
     std::lock_guard lock{registry_mutex_};
-    if (auto it = sessions_.find(id); it != sessions_.end()) {
-        session = it->second;
+    {
+        std::lock_guard<std::mutex> lock{registry_mutex_};
+        auto it = sessions_.find(id);
+        if (it == sessions_.end()) {
+            LOG_ERROR("session was not added, session is nullptr");
+            return;
+        }
+        session_to_remove = it->second;
         sessions_.erase(id);
-        session->close();
-        LOG_INFO("session removed succesfully");
     }
-    LOG_ERROR("session don't removed");
+    session_to_remove->close();
+    LOG_INFO("session removed succesfully");
 }
 
 void SessionRegistry::broadcast(const std::vector<uint8_t>& data) {
