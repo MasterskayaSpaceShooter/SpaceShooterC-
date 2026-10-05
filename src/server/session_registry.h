@@ -11,7 +11,8 @@
  * @details Зона ответственности:
  *          - Хранение владения (`std::shared_ptr<Session>`) всех активных соединений.
  *          - Перенаправление SendPacketEvent из EventBus в нужный объект Session.
- *          - Выполнение массовой рассылки (Broadcast) пакетов при session_id = 0.
+ *          - Выполнение массовой рассылки (Broadcast) пакетов при session_id == BROADCAST_SESSION_ID
+ *            (см. NetworkResponseRouter::BROADCAST_SESSION_ID).
  */
 class SessionRegistry {
 public:

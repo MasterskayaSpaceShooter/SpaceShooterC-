@@ -191,7 +191,7 @@ public:
             throw std::length_error("FrameCodec::encode: payload exceeds kMaxMessageSize");
         }
 
-        constexpr std::uint32_t magic_be = boost::endian::native_to_big(kMagic);
+        const std::uint32_t magic_be = boost::endian::native_to_big(kMagic);
         const std::uint32_t length_be = boost::endian::native_to_big(static_cast<std::uint32_t>(payload.size()));
 
         const auto magic_bytes = std::bit_cast<std::array<std::uint8_t, kMagicLength>>(magic_be);
