@@ -65,7 +65,7 @@ void SessionRegistry::addSession(std::shared_ptr<Session> session) {
 void SessionRegistry::removeSession(SessionId id) {
     std::shared_ptr<Session> session_to_remove;
     {
-        std::lock_guard<std::mutex> lock{registry_mutex_};
+        std::lock_guard lock{registry_mutex_};
         auto it = sessions_.find(id);
         if (it == sessions_.end()) {
             LOG_ERROR("session was not added, session is nullptr");
