@@ -24,8 +24,10 @@ public:
      * @details Взаимодействует с членами класса: инициализирует acceptor_, event_bus_, codec_, session_registry_.
      * @param io_context Входные данные: Контекст ввода-вывода Asio.
      * @param port Входные данные: Сетевой порт для прослушивания.
-     * @param event_bus Входные данные: Шина событий сервера.
+     * @param event_bus Входные данные: Шина событий сервера. Не должен быть nullptr.
      * @param codec Входные данные: Кодек протокола.
+     *
+     * @throws std::invalid_argument Если event_bus равен nullptr.
      */
     TcpServer(boost::asio::io_context& io_context,
               uint16_t port,
