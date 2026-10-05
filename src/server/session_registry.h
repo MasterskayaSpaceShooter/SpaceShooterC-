@@ -1,4 +1,5 @@
 #pragma once
+#include <boost/signals2/connection.hpp>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -36,7 +37,7 @@ public:
      * @param id Входные данные: SessionId удаляемого клиента.
      * @outputs Выходных значений нет.
      */
-    size_t removeSession(SessionId id);
+    void removeSession(SessionId id);
 
     /**
      * @brief Находит и возвращает указатель на сессию по ее ID.
@@ -59,5 +60,6 @@ private:
     std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     std::mutex registry_mutex_;                    ///< Мьютекс защиты таблицы сессий
     std::unordered_map<SessionId, std::shared_ptr<Session>> sessions_;  ///< Карта активных сессий
-    boost::signals2::connection subscription_;
+    boost::signals2::scoped_connection send_subscription_;
+    boost::signals2::scoped_connection remove_subscription_;
 };

@@ -9,7 +9,7 @@
 #include "network_events.h"
 #include "session.h"
 
-// Заглушки для логирования
+//remove after valid logger implementation
 #ifndef LOG_INFO
 #define LOG_INFO(msg) (void)0
 #endif
@@ -22,7 +22,8 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
     if (event_bus_ == nullptr) {
         throw std::invalid_argument("Eventbus is null");
     }
-    subscription_ = event_bus_->subscribe<SendPacketEvent>([this](const SendPacketEvent& event) {
+
+    send_subscription_ = event_bus_->subscribe<SendPacketEvent>([this](const SendPacketEvent& event) {
         std::shared_ptr<Session> session;
         {
             std::lock_guard lock{registry_mutex_};
@@ -34,11 +35,16 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
         if (session != nullptr) {
             session->send(event.payload);
         }
-        LOG_INFO("session created succesfully");
     });
-    if (!subscription_.connected()) {
+
+    remove_subscription_ = event_bus_->subscribe<ClientConnectedEvent>([this](const ClientConnectedEvent& event) {
+        this->removeSession(event.session_id);
+    });
+
+    if (!send_subscription_.connected() || !remove_subscription_.connected()) {
         throw std::runtime_error("Error event subsription");
     }
+    LOG_INFO("SessionRegistry created succesfully");
 }
 
 void SessionRegistry::addSession(std::shared_ptr<Session> session) {
@@ -49,23 +55,23 @@ void SessionRegistry::addSession(std::shared_ptr<Session> session) {
     std::lock_guard lock{registry_mutex_};
     SessionId id = session->getId();
     // if the sessions_ by this id already contains then return
-    if (sessions_.count(id) > 0) {
-        LOG_ERROR("session don't added, this id is used");
+    if(sessions_.emplace(id, session).second){
+        LOG_INFO("Session added succesfully");
         return;
     }
-    sessions_.insert({id, session});
-    LOG_INFO("Session added added succesfully");
+    LOG_ERROR("session was not added, this id is used");
 }
 
-size_t SessionRegistry::removeSession(SessionId id) {
+void SessionRegistry::removeSession(SessionId id) {
+    std::shared_ptr<Session> session;
     std::lock_guard lock{registry_mutex_};
-    size_t res = sessions_.erase(id);
-    if (res == 1) {
+    if(auto it = sessions_.find(id); it != sessions_.end()){
+        session = it->second;
+        sessions_.erase(id);
+        session->close();
         LOG_INFO("session removed succesfully");
-    } else {
-        LOG_ERROR("session don't removed");
     }
-    return res;
+    LOG_ERROR("session don't removed");
 }
 
 void SessionRegistry::broadcast(const std::vector<uint8_t>& data) {
@@ -91,6 +97,6 @@ std::shared_ptr<Session> SessionRegistry::getSession(SessionId id) {
             return it->second;
         }
     }
-    return nullptr;
     LOG_ERROR("session is null by this id");
+    return nullptr;
 }
