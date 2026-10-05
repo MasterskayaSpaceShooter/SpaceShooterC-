@@ -1,11 +1,15 @@
 #pragma once
+
+#include <format>
 #include <functional>
+#include <limits>
 #include <memory>
+#include <shared_mutex>
+#include <utility>
 #include <vector>
 
-#include "NetworkEvents.h"
-
-class EventBus;
+#include "event_bus.h"
+#include "network_events.h"
 
 /**
  * @brief Маршрутизатор и точка управления ВСЕМИ сетевыми событиями.
@@ -14,31 +18,43 @@ class EventBus;
  *          - Передает валидные входящие пакеты во внешний MessageHandler (для отправки в игровой ActionQueue).
  *          - Предоставляет абстрактный API отправки (sendTo, broadcast) с помощью SendPacketEvent.
  */
-class NetworkResponseRouter {
+class NetworkResponseRouter : public std::enable_shared_from_this<NetworkResponseRouter> {
 public:
+    /// Маркер массовой рассылки в SendPacketEvent (session_id == BROADCAST_SESSION_ID).
+    inline static constexpr SessionId kBroadcastSessionId = 0;
+
     /// Сигнатура внешнего слушателя входящих сетевых пакетов
     using MessageHandler = std::function<void(SessionId session_id, std::vector<uint8_t> payload)>;
 
     /**
-     * @brief Конструктор маршрутизатора.
-     * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
-     * @param event_bus Входные данные: Ссылка на шину событий.
+     * @brief Фабрика создания маршрутизатора.
+     * @details Гарантирует владение маршрутизатором через std::shared_ptr, что необходимо
+     *          для безопасной диспетчеризации событий (weak_ptr в подписках) и исключения
+     *          висячих колбэков при конкурентной публикации. Если поток T1 публикует
+     *          NetworkMessageEvent (уже скопировал список слотов и внутри signal(event)
+     *          см. event_bus.h, а поток T2 разрушает роутер — лямбда всё равно выполнится и
+     *          разыменует this уже освобождённого объекта. Это гонка → UAF/краш.
+     * @param event_bus Входные данные: Указатель на шину событий. Должен быть непустым (не nullptr).
+     * @return std::shared_ptr<NetworkResponseRouter> Экземпляр маршрутизатора, либо nullptr,
+     *         если event_bus == nullptr (в этом случае в лог пишется ошибка).
      */
-    explicit NetworkResponseRouter(EventBus& event_bus) {};
+    static std::shared_ptr<NetworkResponseRouter> create(std::shared_ptr<events::EventBus> event_bus);
 
     /**
      * @brief Деструктор маршрутизатора.
-     * @details Освобождает подписки и ресурсы.
+     * @details Отключает подписки на события шины (scoped_connection делает это автоматически).
      */
-    ~NetworkResponseRouter() {};
+    ~NetworkResponseRouter();
 
     /**
      * @brief Регистрирует внешний обработчик входящих декодированных кадров.
-     * @details Взаимодействует с полем: message_handler_.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Запись выполняется под эксклюзивной блокировкой для защиты от гонок
+     *          с одновременным чтением в onMessageReceived().
      * @param handler Входные данные: Функция-колбэк вида void(SessionId, vector<uint8_t>).
      * @outputs Выходных значений нет.
      */
-    void setMessageHandler(MessageHandler handler) {};
+    void setMessageHandler(MessageHandler handler);
 
     /**
      * @brief Формирует и публикует событие отправки пакета конкретному клиенту.
@@ -47,7 +63,7 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void sendTo(SessionId session_id, std::vector<uint8_t> payload) {};
+    void sendTo(SessionId session_id, std::vector<uint8_t> payload);
 
     /**
      * @brief Формирует и публикует событие массовой рассылки пакета всем клиентам.
@@ -55,9 +71,17 @@ public:
      * @param payload Входные данные: Массив байт кадра.
      * @outputs Выходных значений нет.
      */
-    void broadcast(std::vector<uint8_t> payload) {};
+    void broadcast(std::vector<uint8_t> payload);
 
 private:
+    /**
+     * @brief Приватный конструктор маршрутизатора.
+     * @details Взаимодействует с полем: event_bus_. Вызывает setupSubscriptions().
+     *          Создание доступно только через фабрику create().
+     * @param event_bus Входные данные: Указатель на шину событий. Должен быть непустым (не nullptr).
+     */
+    explicit NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus);
+
     /**
      * @brief Подписывает методы класса на события NetworkMessageEvent, ClientConnectedEvent, ClientDisconnectedEvent в
      * EventBus.
@@ -65,15 +89,17 @@ private:
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void setupSubscriptions() {};
+    void setupSubscriptions();
 
     /**
      * @brief Внутренний обработчик прихода входящего кадра от клиента.
-     * @details Взаимодействует с полем: message_handler_. Вызывает зарегистрированный колбэк.
+     * @details Взаимодействует с полями: message_handler_, message_handler_mutex_.
+     *          Копирует обработчик под разделяемой блокировкой и вызывает его вне блокировки,
+     *          чтобы избежать долгого удержания мьютекса и дедлоков.
      * @param event Входные данные: Структура события NetworkMessageEvent.
      * @outputs Выходных значений нет.
      */
-    void onMessageReceived(const NetworkMessageEvent& event) {};
+    void onMessageReceived(const NetworkMessageEvent& event);
 
     /**
      * @brief Внутренний обработчик события подключения нового клиента.
@@ -81,7 +107,7 @@ private:
      * @param event Входные данные: Структура события ClientConnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientConnected(const ClientConnectedEvent& event) {};
+    void onClientConnected(const ClientConnectedEvent& event);
 
     /**
      * @brief Внутренний обработчик события отключения клиента.
@@ -89,8 +115,10 @@ private:
      * @param event Входные данные: Структура события ClientDisconnectedEvent.
      * @outputs Выходных значений нет.
      */
-    void onClientDisconnected(const ClientDisconnectedEvent& event) {};
+    void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    EventBus& event_bus_;             ///< Шина событий
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Владение шиной событий сервера
+    mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
     MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
+    std::vector<boost::signals2::scoped_connection> subscriptions_;  ///< Активные подписки на события шины
 };
