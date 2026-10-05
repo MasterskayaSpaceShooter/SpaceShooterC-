@@ -33,11 +33,15 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
             }
         }
         if (session != nullptr) {
-            session->send(event.payload);
+            if (event.session_id == 0) {
+                this->broadcast(event.payload);
+            } else {
+                session->send(event.payload);
+            }
         }
     });
 
-    remove_subscription_ = event_bus_->subscribe<ClientConnectedEvent>([this](const ClientConnectedEvent& event) {
+    remove_subscription_ = event_bus_->subscribe<ClientDisconnectedEvent>([this](const ClientDisconnectedEvent& event) {
         this->removeSession(event.session_id);
     });
 
@@ -68,7 +72,7 @@ void SessionRegistry::removeSession(SessionId id) {
         std::lock_guard lock{registry_mutex_};
         auto it = sessions_.find(id);
         if (it == sessions_.end()) {
-            LOG_ERROR("session was not added, session is nullptr");
+            LOG_ERROR("session was not removed, session is nullptr");
             return;
         }
         session_to_remove = it->second;
@@ -80,9 +84,9 @@ void SessionRegistry::removeSession(SessionId id) {
 
 void SessionRegistry::broadcast(const std::vector<uint8_t>& data) {
     std::vector<std::shared_ptr<Session>> sessions;
-    sessions.reserve(sessions_.size());
     {
         std::lock_guard lock{registry_mutex_};
+        sessions.reserve(sessions_.size());
         for (auto& [_, session] : sessions_) {
             sessions.push_back(session);
         }
