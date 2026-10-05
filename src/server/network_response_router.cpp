@@ -16,7 +16,6 @@ NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> e
     event_bus_(std::move(event_bus)) {}
 
 NetworkResponseRouter::~NetworkResponseRouter() {
-    // scoped_connection автоматически отключает подписки; очищаем вектор явно
     subscriptions_.clear();
 }
 
