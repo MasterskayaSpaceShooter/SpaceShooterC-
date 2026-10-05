@@ -72,14 +72,13 @@ private:
 class TcpClientTest : public ::testing::Test {
 protected:
     net::io_context ioc_;
-    network::FrameCodec codec_;
     std::shared_ptr<TcpClient> client_;
     std::unique_ptr<EchoServer> server_;
     std::thread io_thread_;
 
     void SetUp() override {
         server_ = std::make_unique<EchoServer>(ioc_, 0);
-        client_ = std::make_shared<TcpClient>(ioc_, codec_);
+        client_ = std::make_shared<TcpClient>(ioc_);
         io_thread_ = std::thread([this] {
             ioc_.run();
         });
@@ -158,6 +157,36 @@ TEST_F(TcpClientTest, SendBeforeConnectDoesNotPreventConnection) {
     }));
 }
 
+TEST_F(TcpClientTest, SendWritesFrameToServer) {
+    std::atomic<bool> received{false};
+    client_->setMessageCallback([&received](const std::vector<uint8_t>& message) {
+        received = message == std::vector<uint8_t>({1, 2, 3});
+    });
+
+    client_->connect("127.0.0.1", server_->port(), {});
+    ASSERT_TRUE(waitFor([&] {
+        return client_->isConnected();
+    }));
+
+    client_->send({1, 2, 3});
+
+    EXPECT_TRUE(waitFor([&] {
+        return received.load();
+    }));
+}
+
+TEST_F(TcpClientTest, OversizedSendIsRejectedWithoutDisconnecting) {
+    client_->connect("127.0.0.1", server_->port(), {});
+    ASSERT_TRUE(waitFor([&] {
+        return client_->isConnected();
+    }));
+
+    std::vector<uint8_t> oversized(network::FrameCodec::kMaxMessageSize + 1);
+    client_->send(std::move(oversized));
+
+    EXPECT_TRUE(client_->isConnected());
+}
+
 TEST_F(TcpClientTest, ConnectToInvalidHost) {
     std::atomic<bool> result{false};
     std::atomic<bool> callback_called{false};
@@ -197,8 +226,7 @@ TEST_F(TcpClientTest, DoubleConnectFails) {
 
 TEST(TcpClientCancellationTest, DisconnectDuringConnectCompletesCallbackOnce) {
     net::io_context ioc;
-    network::FrameCodec codec;
-    auto client = std::make_shared<TcpClient>(ioc, codec);
+    auto client = std::make_shared<TcpClient>(ioc);
     tcp::acceptor acceptor(ioc, tcp::endpoint(tcp::v4(), 0));
     std::atomic<int> callback_count{0};
     std::atomic<bool> callback_result{true};
