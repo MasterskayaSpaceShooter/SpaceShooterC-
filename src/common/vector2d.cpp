@@ -21,7 +21,8 @@ Vector2D& Vector2D::operator*=(Scalar s) {
     return *this;
 }
 
-bool Vector2D::operator==(const Vector2D& rhs) const {
-    return x == rhs.x && y == rhs.y;
-}
+//bool Vector2D::operator==(const Vector2D& rhs) const {
+//    return x == rhs.x && y == rhs.y;
+//}
+
 };  // namespace math
