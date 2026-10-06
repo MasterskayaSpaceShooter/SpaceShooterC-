@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/operators.hpp>
 #include <numbers>
 
 namespace math {
@@ -8,11 +7,7 @@ namespace math {
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
 
-struct Vector2D : boost::addable<Vector2D>,
-                  boost::subtractable<Vector2D>,
-                  boost::multipliable<Vector2D, Scalar>,
-                  boost::multipliable2<Vector2D, Scalar>,
-                  boost::equality_comparable<Vector2D> {
+struct Vector2D {
     Scalar x = 0;
     Scalar y = 0;
 
@@ -22,6 +17,21 @@ struct Vector2D : boost::addable<Vector2D>,
     Vector2D& operator+=(const Vector2D& rhs);
     Vector2D& operator-=(const Vector2D& rhs);
     Vector2D& operator*=(Scalar s);
+
+    [[nodiscard]] friend Vector2D operator+(Vector2D lhs, const Vector2D& rhs) {
+        lhs += rhs;
+        return lhs;
+    }
+
+    [[nodiscard]] friend Vector2D operator-(Vector2D lhs, const Vector2D& rhs) {
+        lhs -= rhs;
+        return lhs;
+    }
+
+    [[nodiscard]] friend Vector2D operator*(Vector2D lhs, Scalar s) {
+        lhs *= s;
+        return lhs;
+    }
 
     bool operator==(const Vector2D&) const = default;
 
