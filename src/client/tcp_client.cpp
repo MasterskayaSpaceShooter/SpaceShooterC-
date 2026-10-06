@@ -54,7 +54,7 @@ void TcpClient::invokeConnectCallback(std::function<void(bool)>& callback,
 }
 
 bool TcpClient::isValidGeneration(uint64_t generation) const noexcept {
-    return generation == active_connect_generation_ && generation == disconnect_generation_ && is_connecting_;
+    return generation == active_connect_generation_ && generation == disconnect_generation_;
 }
 
 void TcpClient::logErrorOnly(std::string_view context_name) noexcept {
@@ -312,7 +312,7 @@ void TcpClient::doRead() {
                 [client_ptr, read_chunk, generation](const boost::system::error_code& ec,
                                                      std::size_t bytes_transferred) noexcept {
                     try {
-                        if (!client_ptr->isValidGeneration(generation) || !client_ptr->is_connecting_ ||
+                        if (!client_ptr->isValidGeneration(generation) ||
                             !client_ptr->is_connected_.load(std::memory_order_acquire) ||
                             client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
                             return;
