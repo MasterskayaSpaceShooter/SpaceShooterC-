@@ -23,7 +23,14 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
         throw std::invalid_argument("Eventbus is null");
     }
 
+    /// id сессии, обозначающий рассылку всем клиентам
+    constexpr SessionId kBroadcastSessionId = 0;
+
     send_subscription_ = event_bus_->subscribe<SendPacketEvent>([this](const SendPacketEvent& event) {
+        if (event.session_id == kBroadcastSessionId) {
+            this->broadcast(event.payload);
+            return;
+        }
         std::shared_ptr<Session> session;
         {
             std::lock_guard lock{registry_mutex_};
@@ -33,11 +40,7 @@ SessionRegistry::SessionRegistry(std::shared_ptr<events::EventBus> event_bus) : 
             }
         }
         if (session != nullptr) {
-            if (event.session_id == 0) {
-                this->broadcast(event.payload);
-            } else {
-                session->send(event.payload);
-            }
+            session->send(event.payload);
         }
     });
 
