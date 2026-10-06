@@ -15,7 +15,12 @@
 
 /**
  * @brief Уровень логирования.
+ * Глобальный макрос ERROR, определенный в заголовках Windows (<windows.h>),
+ * конфликтует с перечислением LogLevel::ERROR.
  */
+#ifdef ERROR
+#undef ERROR
+#endif
 enum class LogLevel { DEBUG, INFO, WARN, ERROR };
 
 /**
