@@ -37,6 +37,46 @@ void TcpClient::handleWriteSetupError(std::string_view context_name) noexcept {
     logAndDisconnect(context_name);
 }
 
+void TcpClient::invokeConnectCallback(std::function<void(bool)>& callback,
+                                      bool status,
+                                      std::string_view context_name) noexcept {
+    if (!callback) {
+        return;
+    }
+    auto cb = std::move(callback);
+    try {
+        cb(status);
+    } catch (const std::exception& ex) {
+        LOG_ERROR("on_connect threw {}: {}", context_name, ex.what());
+    } catch (...) {
+        LOG_ERROR("on_connect threw unknown {}", context_name);
+    }
+}
+
+bool TcpClient::isValidGeneration(uint64_t generation) const noexcept {
+    return generation == active_connect_generation_ && generation == disconnect_generation_ && is_connecting_;
+}
+
+void TcpClient::logErrorOnly(std::string_view context_name) noexcept {
+    try {
+        throw;  // Перезапускает обработку текущего исключения
+    } catch (const std::exception& ex) {
+        LOG_ERROR("Exception in {}: {}", context_name, ex.what());
+    } catch (...) {
+        LOG_ERROR("Unknown exception in {}", context_name);
+    }
+}
+
+bool TcpClient::isStopped() const noexcept {
+    return !is_connected_.load(std::memory_order_acquire) || disconnect_requested_.load(std::memory_order_acquire);
+}
+
+void TcpClient::failConnect(std::string_view reason) noexcept {
+    is_connecting_ = false;
+    is_connected_.store(false, std::memory_order_release);
+    invokeConnectCallback(pending_connect_callback_, false, reason);
+}
+
 void TcpClient::connect(const std::string& host, uint16_t port, std::function<void(bool)> on_connect) {
     try {
         auto client_ptr = shared_from_this();
@@ -49,15 +89,9 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
             try {
                 const auto generation = client_ptr->disconnect_generation_;
                 if (client_ptr->is_connected_.load(std::memory_order_acquire) || client_ptr->is_connecting_) {
-                    if (*connect_cb) {
-                        try {
-                            (*connect_cb)(false);
-                        } catch (const std::exception& ex) {
-                            LOG_ERROR("on_connect threw: {}", ex.what());
-                        } catch (...) {
-                            LOG_ERROR("on_connect threw unknown");
-                        }
-                    }
+                    client_ptr->invokeConnectCallback(*connect_cb,
+                                                      false,
+                                                      "connect called while already connected or connecting");
                     return;
                 }
 
@@ -83,40 +117,26 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                         [client_ptr, generation](const boost::system::error_code& ec,
                                                  tcp::resolver::results_type endpoints) noexcept {
                             try {
-                                if (generation != client_ptr->active_connect_generation_ ||
-                                    !client_ptr->is_connecting_ || generation != client_ptr->disconnect_generation_) {
+                                if (!client_ptr->isValidGeneration(generation) || !client_ptr->is_connecting_) {
                                     return;
                                 }
 
                                 client_ptr->resolver_.reset();
                                 if (client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
                                     client_ptr->is_connecting_ = false;
-                                    auto callback = std::move(client_ptr->pending_connect_callback_);
-                                    if (callback) {
-                                        try {
-                                            callback(false);
-                                        } catch (const std::exception& ex) {
-                                            LOG_ERROR("on_connect threw after disconnect request: {}", ex.what());
-                                        } catch (...) {
-                                            LOG_ERROR("on_connect threw unknown after disconnect request");
-                                        }
-                                    }
+
+                                    client_ptr->invokeConnectCallback(client_ptr->pending_connect_callback_,
+                                                                      false,
+                                                                      "disconnect requested during resolve");
                                     return;
                                 }
 
                                 if (ec) {
                                     client_ptr->is_connecting_ = false;
-                                    auto callback = std::move(client_ptr->pending_connect_callback_);
-                                    LOG_ERROR("Invalid host address: {}", ec.message());
-                                    if (callback) {
-                                        try {
-                                            callback(false);
-                                        } catch (const std::exception& ex) {
-                                            LOG_ERROR("on_connect threw: {}", ex.what());
-                                        } catch (...) {
-                                            LOG_ERROR("on_connect threw unknown");
-                                        }
-                                    }
+
+                                    client_ptr->invokeConnectCallback(client_ptr->pending_connect_callback_,
+                                                                      false,
+                                                                      "resolve failed");
                                     return;
                                 }
                                 // Запускаем асинхронное подключение к первому доступному endpoint
@@ -132,27 +152,13 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                                         [client_ptr, generation](const boost::system::error_code& connect_ec,
                                                                  const tcp::endpoint&) noexcept {
                                             try {
-                                                if (generation != client_ptr->active_connect_generation_ ||
-                                                    !client_ptr->is_connecting_ ||
-                                                    generation != client_ptr->disconnect_generation_) {
+                                                if (!client_ptr->isValidGeneration(generation) ||
+                                                    !client_ptr->is_connecting_) {
                                                     return;
                                                 }
 
                                                 if (client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
-                                                    client_ptr->is_connecting_ = false;
-                                                    client_ptr->is_connected_.store(false, std::memory_order_release);
-                                                    auto callback = std::move(client_ptr->pending_connect_callback_);
-                                                    if (callback) {
-                                                        try {
-                                                            callback(false);
-                                                        } catch (const std::exception& ex) {
-                                                            LOG_ERROR("on_connect threw after disconnect request: {}",
-                                                                      ex.what());
-                                                        } catch (...) {
-                                                            LOG_ERROR(
-                                                                "on_connect threw unknown after disconnect request");
-                                                        }
-                                                    }
+                                                    client_ptr->failConnect("disconnect requested during connect");
                                                     return;
                                                 }
 
@@ -161,29 +167,15 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                                                 if (connect_ec) {
                                                     client_ptr->is_connected_.store(false, std::memory_order_release);
                                                     LOG_ERROR("Connection failed: {}", connect_ec.message());
-                                                    if (callback) {
-                                                        try {
-                                                            callback(false);
-                                                        } catch (const std::exception& ex) {
-                                                            LOG_ERROR("on_connect threw: {}", ex.what());
-                                                        } catch (...) {
-                                                            LOG_ERROR("on_connect threw unknown");
-                                                        }
-                                                    }
+                                                    client_ptr->invokeConnectCallback(callback,
+                                                                                      false,
+                                                                                      "connect failed");
                                                     return;
                                                 }
 
                                                 client_ptr->is_connected_.store(true, std::memory_order_release);
                                                 LOG_INFO("TcpClient connected");
-                                                if (callback) {
-                                                    try {
-                                                        callback(true);
-                                                    } catch (const std::exception& ex) {
-                                                        LOG_ERROR("on_connect threw: {}", ex.what());
-                                                    } catch (...) {
-                                                        LOG_ERROR("on_connect threw unknown");
-                                                    }
-                                                }
+                                                client_ptr->invokeConnectCallback(callback, true, "connected");
                                                 client_ptr->doRead();
                                             } catch (...) {
                                                 client_ptr->logAndDisconnect("connect completion handler");
@@ -197,10 +189,8 @@ void TcpClient::connect(const std::string& host, uint16_t port, std::function<vo
                 client_ptr->logAndDisconnect("connect handler");
             }
         });
-    } catch (const std::exception& ex) {
-        LOG_ERROR("Exception while scheduling connect: {}", ex.what());
     } catch (...) {
-        LOG_ERROR("Unknown exception while scheduling connect");
+        logErrorOnly("connect scheduling");
     }
 }
 
@@ -226,16 +216,12 @@ void TcpClient::send(std::vector<uint8_t> data) {
                 if (!client_ptr->is_writing_) {
                     client_ptr->doWrite();
                 }
-            } catch (const std::exception& ex) {
-                LOG_ERROR("Exception in send handler: {}", ex.what());
             } catch (...) {
-                LOG_ERROR("Unknown exception in send handler");
+                client_ptr->logErrorOnly("send handler");
             }
         });
-    } catch (const std::exception& ex) {
-        LOG_ERROR("Exception while scheduling send: {}", ex.what());
     } catch (...) {
-        LOG_ERROR("Unknown exception while scheduling send");
+        logErrorOnly("send scheduling");
     }
 }
 
@@ -284,34 +270,22 @@ void TcpClient::disconnect() noexcept {
 
                 auto connect_callback = std::move(client_ptr->pending_connect_callback_);
                 if (was_connecting && connect_callback) {
-                    try {
-                        connect_callback(false);
-                    } catch (const std::exception& ex) {
-                        LOG_ERROR("on_connect threw during disconnect: {}", ex.what());
-                    } catch (...) {
-                        LOG_ERROR("on_connect threw unknown during disconnect");
-                    }
+                    client_ptr->invokeConnectCallback(connect_callback, false, "disconnect during connect");
                 }
 
                 if (was_connected && client_ptr->disconnect_cb_) {
                     try {
                         client_ptr->disconnect_cb_();
-                    } catch (const std::exception& ex) {
-                        LOG_ERROR("disconnect callback threw: {}", ex.what());
                     } catch (...) {
-                        LOG_ERROR("disconnect callback threw unknown");
+                        client_ptr->logErrorOnly("disconnect callback");
                     }
                 }
-            } catch (const std::exception& ex) {
-                LOG_ERROR("Exception in disconnect handler: {}", ex.what());
             } catch (...) {
-                LOG_ERROR("Unknown exception in disconnect handler");
+                client_ptr->logErrorOnly("disconnect handler");
             }
         });
-    } catch (const std::exception& ex) {
-        LOG_ERROR("Exception while scheduling disconnect: {}", ex.what());
     } catch (...) {
-        LOG_ERROR("Unknown exception while scheduling disconnect");
+        logErrorOnly("disconnect scheduling");
     }
 }
 
@@ -338,8 +312,7 @@ void TcpClient::doRead() {
                 [client_ptr, read_chunk, generation](const boost::system::error_code& ec,
                                                      std::size_t bytes_transferred) noexcept {
                     try {
-                        if (generation != client_ptr->active_connect_generation_ ||
-                            generation != client_ptr->disconnect_generation_ ||
+                        if (!client_ptr->isValidGeneration(generation) || !client_ptr->is_connecting_ ||
                             !client_ptr->is_connected_.load(std::memory_order_acquire) ||
                             client_ptr->disconnect_requested_.load(std::memory_order_acquire)) {
                             return;

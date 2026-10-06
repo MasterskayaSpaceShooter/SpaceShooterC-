@@ -101,7 +101,26 @@ public:
 private:
     // Логирование и отключение при ошибках в контексте асинхронных операций
     void logAndDisconnect(std::string_view context_name) noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
     void handleWriteSetupError(std::string_view context_name) noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
+    void invokeConnectCallback(std::function<void(bool)>& callback,
+                               bool status,
+                               std::string_view context_name) noexcept;
+
+    // Проверяет, что поколение подключения совпадает с активным на момент вызова (для защиты от гонок)
+    bool isValidGeneration(uint64_t generation) const noexcept;
+
+    // Логирование ошибок без отключения (например, при ошибках в колбэках)
+    void logErrorOnly(std::string_view context_name) noexcept;
+
+    // Проверяет, что клиент не остановлен, не отключен и не в процессе отключения
+    bool isStopped() const noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
+    void failConnect(std::string_view reason) noexcept;
 
     /**
      * @brief Асинхронно считывает входящие байты от сервера (async_read_some).
