@@ -49,7 +49,7 @@ public:
 
     /**
      * @brief Деструктор сетевого контекста.
-     * @details Взаимодействует с членами класса: автоматически вызывает метод  и приватный join_workers()
+     * @details Взаимодействует с членами класса: автоматически вызывает метод force_stop() и приватный join_workers()
      *          (эквивалент wait() без проверки предусловий), чтобы уничтожение
      *          никогда не стартовавшего объекта не приводило к abort().
      * @warning Не вызывать из воркер-потока - будет std::abort.
@@ -125,6 +125,31 @@ public:
      *          run() вернётся, когда очередь опустеет; воркеры выйдут из цикла
      *          по stop_requested(). Повторный вызов - no-op.
      *          Безопасно вызывать из любого потока, включая воркеры.
+     *   ВАЖНО: сам по себе stop() не отменяет и не закрывает
+     *          асинхронные операции пользователя (таймеры, сокеты,
+     *          клиентские чтения). NetworkContext не владеет этими
+     *          ресурсами и не знает о них. Поэтому:
+     *          - если очередь пуста и активных async-операций нет - run() вернётся, воркеры завершатся, wait()
+     * отработает;
+     *          - если хотя бы один steady_timer / socket / async_wait находится в работе - run() не вернётся.
+     *          Воркеры останутся в io_context_.run(), wait() повиснет на jthread::join() навсегда.
+     *          Порядок graceful-завершения:
+     * @code
+     *          // 1. Остановить приём новой работы.
+     *          acceptor.close();
+     *
+     *          // 2. Отменить/закрыть все долгоживущие async-операции.
+     *          //    Это ответственность пользователя: NetworkContext их не видит.
+     *          for (auto& s : sessions) {
+     *              s.timer.cancel();
+     *              s.socket.cancel();
+     *          s.socket.close();
+     *          }
+     *
+     *          // 3. Дать io_context доработать очередь и завершиться.
+     *              ctx.stop();
+     *              ctx.wait();
+     * @endcode
      * @warning Может зависнуть на wait(), если активные async-операции не завершаются.
      *          Для аварийного завершения использовать force_stop().
      */
@@ -144,13 +169,22 @@ public:
      * @brief Аварийная остановка: обрывает очередь и активные операции.
      * @details Снимает work_guard, выставляет stop_token каждому jthread, вызывает io_context_.stop().
      *          Текущий handler доработает, остальные — не выполнятся. Активные async-операции не завершатся.
-     *          Повторный вызов - no-op.
      *          Безопасно вызывать из любого потока, включая воркеры.
+     *          Поведение по состояниям:
+     *          - NotStarted / Joined   - no-op (нечего останавливать);
+     *          - Started               - аварийная остановка;
+     *          - Stopped (после stop()) - эскалация: graceful не сработал,
+     *                                     добиваем аварийно. io_context_.stop()
+     *                                     разбудит воркеры, висящие в run()
+     *                                     на незавершённых async-операциях.
+     *
+     *          Идемпотентен: повторные вызовы безопасны (io_context_.stop()
+     *          и work_guard_.reset() идемпотентны).
      * @warning Pending handler'ы теряются.
      */
     void force_stop() noexcept {
         std::lock_guard lock(mutex_);
-        if (state_ != State::Started) {
+        if (state_ == State::NotStarted || state_ == State::Joined) {
             return;
         }
         state_ = State::Stopped;
@@ -172,6 +206,8 @@ public:
      * @note Не вызывать из деструктора: деструктор использует приватный
      *       join_workers() без проверки предусловий, чтобы уничтожение
      *       никогда не стартовавшего объекта не приводило к abort().
+     *       Деструктор вызывает force_stop(), который всегда разбудит io_context_ (эскалация из Stopped), поэтому
+     *       join_workers() в деструкторе не может зависнуть на незакрытых операциях.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
@@ -215,19 +251,52 @@ private:
         return tls_worker_ctx_ == this;
     }
 
+    /**
+     * @brief Джойнит все воркер-потоки, переводя состояние в Joined.
+     * @details Переносит worker_threads_ под мьютексом в локальный вектор,
+     *          затем отпускает мьютекс - и только после этого локальный
+     *          вектор разрушается (std::jthread::join() в деструкторе).
+     *          Это гарантирует, что join выполняется вне блокировки,
+     *          иначе воркер, вызывающий stop()/force_stop() из своего
+     *          потока, мог бы задедлочиться на mutex_.
+     *
+     *          Идемпотентен: повторный вызов при state_ == Joined - no-op.
+     *
+     *          Вызывается из:
+     *          - ~NetworkContext()  - безусловно, для гарантированного join;
+     *          - wait()             - после проверки предусловий.
+     *
+     * @pre Перед вызовом должен быть выполнен stop() или force_stop(),
+     *      либо объект никогда не стартовал (пустой worker_threads_).
+     *      Для state_ == Started метод сам по себе корректен, но join()
+     *      заблокируется до завершения воркеров - а они не завершатся,
+     *      пока io_context_ не остановлен / work_guard_ не сброшен.
+     *
+     * @warning Блокируется до завершения всех воркеров. Если хотя бы один
+     *          воркер висит в io_context_.run() на незавершённой
+     *          async-операции (таймер, сокет) и io_context_.stop() не был
+     *          вызван - метод повиснет навсегда. В деструкторе это
+     *          исключено: force_stop() перед join_workers() гарантирует
+     *          io_context_.stop() (см. force_stop()).
+     *
+     * @warning Не вызывать из воркер-потока того же объекта - self-join.
+     *          Проверка self-join выполняется в wait() и ~NetworkContext()
+     *          до вызова этого метода; сам метод проверок не делает.
+     */
     void join_workers() {
-        std::vector<std::jthread> to_join;
-        {
-            std::lock_guard lock(mutex_);
-            if (state_ == State::Joined)
-                return;
-            to_join = std::move(worker_threads_);
-            worker_threads_.clear();
-            state_ = State::Joined;
-        }
+        std::call_once(join_flag_, [this] {
+            std::vector<std::jthread> to_join;
+            {
+                std::lock_guard lock(mutex_);
+                to_join = std::move(worker_threads_);
+                worker_threads_.clear();
+                state_ = State::Joined;
+            }
+        });
     }
 
     [[noreturn]] static void fatal(const char* msg) {
+        // TODO(i.petrushkov): move to logger
         std::cerr << "[NetworkContext] FATAL: " << msg << '\n';
         std::abort();
     }
@@ -242,7 +311,10 @@ private:
 
         while (!st.stop_requested()) {
             try {
-                io_context_.run();
+                const auto n = io_context_.run();
+                if (n == 0) {
+                    break;
+                }
             } catch (const std::exception& e) {
                 std::cerr << "[NetworkContext] worker exception: " << e.what() << '\n';
             } catch (...) {
@@ -253,6 +325,7 @@ private:
         }
     }
 
+    std::once_flag join_flag_;
     boost::asio::io_context io_context_;  ///< Главный контекст событий Asio
     boost::asio::executor_work_guard<boost::asio::io_context::executor_type>
         work_guard_;                            ///< Защитник от пустой остановки run()
