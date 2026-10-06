@@ -146,7 +146,7 @@ public:
             });
         } else {
             // Резервный синхронный вывод (если вызвали лог до инициализации Asio)
-            std::lock_guard<std::mutex> lock(fallback_mutex_);
+            std::lock_guard<std::mutex> fallback_lock(fallback_mutex_);
             printToConsole(now, thread_id, level, loc, message);
         }
     }
