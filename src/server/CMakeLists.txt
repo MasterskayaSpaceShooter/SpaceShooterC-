@@ -1,6 +1,8 @@
 add_executable(server_app
     main.cpp
     session.cpp
+    session_registry.cpp
+    session_registry.h
     network_response_router.cpp
     network_response_router.h
 )

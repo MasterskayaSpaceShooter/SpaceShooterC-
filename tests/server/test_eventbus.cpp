@@ -1,9 +1,11 @@
 #include <atomic>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <logger.h>
 #include <thread>
 #include <vector>
 
+/*
 // МОК ЛОГЕРА
 
 class LoggerMock {
@@ -19,6 +21,7 @@ LoggerMock& loggerMock() {
 
 #define LOG_INFO(message) ::loggerMock().info(message)
 #define LOG_ERROR(message) ::loggerMock().error(message)
+*/
 
 #include <event_bus.h>
 

@@ -179,3 +179,4 @@ ENV/
 # Specific client-server project structure
 network/server/build/
 network/client/build/
+__cmake_systeminformation/CMakeLists.txt

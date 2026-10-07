@@ -1,14 +1,15 @@
 #pragma once
+#include <atomic>
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <vector>
 
+#include "event_bus.h"
+#include "frame_codec.h"
 #include "network_events.h"
-
-class FrameCodec;
-class EventBus;
 
 /**
  * @brief Класс асинхронной сетевой сессии подключенного клиента.
@@ -29,7 +30,10 @@ public:
      * @param event_bus Входные данные: Ссылка на шину событий для публикации кадров и дисконнектов.
      * @param codec Входные данные: Ссылка на кодек нарезки кадров.
      */
-    Session(boost::asio::ip::tcp::socket socket, SessionId id, EventBus& event_bus, FrameCodec& codec);
+    Session(boost::asio::ip::tcp::socket socket,
+            SessionId id,
+            std::shared_ptr<events::EventBus> event_bus,
+            network::FrameCodec& codec);
 
     /**
      * @brief Деструктор сессии.
@@ -52,7 +56,7 @@ public:
      * @param data Входные данные: Массив байт отправляемого кадра.
      * @outputs Выходных значений нет.
      */
-    void send(std::vector<uint8_t> data);
+    void send(const std::vector<uint8_t>& data);
 
     /**
      * @brief Принудительно закрывает сокет сессии и оповещает системы об отключении.
@@ -91,17 +95,16 @@ private:
      */
     void doWrite();
 
-    boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет подключения
-    const SessionId id_;                   ///< Уникальный ID сессии
-    // TODO(Session): поля не задействованы в стаб-реализации методов,
-    // поэтому помечены [[maybe_unused]] до момента реализации doRead()/doWrite().
-    [[maybe_unused]] EventBus& event_bus_;  ///< Шина событий сервера
-    [[maybe_unused]] FrameCodec& codec_;    ///< Кодек протокола
+    boost::asio::ip::tcp::socket socket_;          ///< TCP-сокет подключения
+    const SessionId id_;                           ///< Уникальный ID сессии
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
+    network::FrameCodec& codec_;                   ///< Кодек протокола
+    boost::asio::strand<boost::asio::any_io_executor> strand_;
 
-    std::vector<uint8_t> read_buffer_;               ///< Буфер асинхронного чтения байт
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
+    boost::beast::flat_buffer read_buffer_;          ///< накопитель
 
-    std::mutex write_mutex_;                        ///< Мьютекс защиты очереди записи
+    std::atomic<bool> closed_{false};               ///< Флаг активности потока
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь исходящих кадров
-    [[maybe_unused]] bool is_writing_{false};       ///< Флаг активности операции async_write
+    bool is_writing_{false};                        ///< Флаг активности операции async_write
 };

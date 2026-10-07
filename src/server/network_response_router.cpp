@@ -36,16 +36,12 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
 }
 
 void NetworkResponseRouter::onClientConnected(const ClientConnectedEvent& event) {
-    // TODO: Убрать после подключения логгера
-    // Заглушка LOG_INFO ((void)0) отбрасывает аргумент макроса,
-    // поэтому параметр помечаем использованным явно.
-    (void)event;
-    LOG_INFO(std::format("Клиент подключен: session_id={}, адрес={}", event.session_id, event.remote_address));
+    LOG_INFO("Клиент подключен: session_id={}, адрес={}", event.session_id, event.remote_address);
 }
 
 void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& event) {
     (void)event;
-    LOG_INFO(std::format("Клиент отключен: session_id={}", event.session_id));
+    LOG_INFO("Клиент отключен: session_id={}", event.session_id);
 }
 
 void NetworkResponseRouter::setupSubscriptions() {

@@ -1,4 +1,5 @@
 #pragma once
+#include <boost/signals2/connection.hpp>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -21,7 +22,7 @@ public:
      * @details Взаимодействует с полем: event_bus_. Подписывается на SendPacketEvent.
      * @param event_bus Входные данные: Ссылка на центральную шину событий сервера.
      */
-    explicit SessionRegistry(events::EventBus& event_bus);
+    explicit SessionRegistry(std::shared_ptr<events::EventBus> event_bus);
 
     /**
      * @brief Регистрирует новую созданную сессию в реестре.
@@ -50,13 +51,16 @@ public:
     /**
      * @brief Отправляет пакет данных абсолютно всем подключенным в данный момент клиентам.
      * @details Взаимодействует с полями: sessions_, registry_mutex_, а также вызывает Session::send().
+            - Метод Session::send() внутри себя вызывает async_write
      * @param data Входные данные: Константная ссылка на вектор байт кадра.
      * @outputs Выходных значений нет.
      */
     void broadcast(const std::vector<uint8_t>& data);
 
 private:
-    events::EventBus& event_bus_;  ///< Шина событий сервера
-    std::mutex registry_mutex_;    ///< Мьютекс защиты таблицы сессий
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
+    std::mutex registry_mutex_;                    ///< Мьютекс защиты таблицы сессий
     std::unordered_map<SessionId, std::shared_ptr<Session>> sessions_;  ///< Карта активных сессий
+    boost::signals2::scoped_connection send_subscription_;
+    boost::signals2::scoped_connection remove_subscription_;
 };
