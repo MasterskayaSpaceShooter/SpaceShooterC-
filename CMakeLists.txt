@@ -4,7 +4,7 @@ project(SpaceShooter VERSION 0.1 LANGUAGES CXX)
 if(NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wextra -Wpedantic")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /Zc:preprocessor")
 endif()
 
 # Экспорт compile_commands.json для корректной работы IntelliSense в IDE

@@ -2,15 +2,7 @@
 
 #include "event_bus.h"
 #include "frame_codec.h"
-
-// TODO (a.shaporova): remove after valid logger implementation
-#ifndef LOG_INFO
-#define LOG_INFO(msg) (void)0
-#endif
-
-#ifndef LOG_ERROR
-#define LOG_ERROR(msg) (void)0
-#endif
+#include "logger.h"
 
 Session::Session(boost::asio::ip::tcp::socket socket,
                  SessionId id,
@@ -19,10 +11,10 @@ Session::Session(boost::asio::ip::tcp::socket socket,
     socket_(std::move(socket)), id_(id), event_bus_(std::move(event_bus)), codec_(codec),
     strand_(boost::asio::make_strand(socket_.get_executor())) {
     if (!event_bus_) {
-        LOG_INFO(std::format("event_bus is null, id = {}", id_));
+        LOG_INFO("event_bus is null, id = {}", id_);
         throw std::invalid_argument("event_bus is null");
     }
-    LOG_INFO(std::format("Session {} created", id_));
+    LOG_INFO("Session {} created", id_);
 }
 
 Session::~Session() {
@@ -30,15 +22,15 @@ Session::~Session() {
     if (socket_.is_open()) {
         socket_.close(ec);
     }
-    LOG_INFO(std::format("Session {} destroyed", id_));
+    LOG_INFO("Session {} destroyed", id_);
 }
 
 void Session::start() {
     if (closed_.load()) {
-        LOG_INFO(std::format("Session {} closed", id_));
+        LOG_INFO("Session {} closed", id_);
         return;
     }
-    LOG_INFO(std::format("Session {} started", id_));
+    LOG_INFO("Session {} started", id_);
     boost::asio::post(strand_, [self = shared_from_this()] {
         self->doRead();
     });
@@ -47,7 +39,7 @@ void Session::start() {
 void Session::send(const std::vector<uint8_t>& data) {
     boost::asio::post(strand_, [self = shared_from_this(), data = std::move(data)]() {
         if (self->closed_.load()) {
-            LOG_ERROR(std::format("Session {} closed", self->id_));
+            LOG_ERROR("Session {} closed", self->id_);
             return;
         }
 
@@ -56,7 +48,7 @@ void Session::send(const std::vector<uint8_t>& data) {
             self->is_writing_ = true;
             self->doWrite();
         }
-        LOG_INFO(std::format("Session {} , data in the queue", self->id_));
+        LOG_INFO("Session {} , data in the queue", self->id_);
     });
 }
 
@@ -68,7 +60,7 @@ void Session::close() {
     boost::asio::post(strand_, [self = shared_from_this()] {
         boost::system::error_code ec;
         self->socket_.close(ec);
-        LOG_INFO(std::format("Session {} closed", self->id_));
+        LOG_INFO("Session {} closed", self->id_);
         self->event_bus_->publish(ClientDisconnectedEvent{self->id_});
     });
 }
@@ -84,7 +76,7 @@ void Session::doRead() {
             [self = shared_from_this()](const boost::system::error_code& error, std::size_t bytes_transferred) {
                 if (error) {
                     if (error != boost::asio::error::operation_aborted) {
-                        LOG_ERROR(std::format("Session {} read error: {}", self->id_, error.message()));
+                        LOG_ERROR("Session {} read error: {}", self->id_, error.message());
                     }
                     self->close();
                     return;
@@ -98,7 +90,7 @@ void Session::doRead() {
                 });
 
                 if (messages > 0) {
-                    LOG_INFO(std::format("Session {} decoded frames", self->id_));
+                    LOG_INFO("Session {} decoded frames", self->id_);
                 }
                 self->doRead();
             }));
@@ -126,7 +118,7 @@ void Session::doWrite() {
                 [self = shared_from_this(), frame_ptr](const boost::system::error_code& ec, std::size_t) {
                     if (ec) {
                         if (ec != boost::asio::error::operation_aborted) {
-                            LOG_ERROR(std::format("Session {} write error: {}", self->id_, ec.message()));
+                            LOG_ERROR("Session {} write error: {}", self->id_, ec.message());
                         }
                         self->is_writing_ = false;
                         self->close();
@@ -135,7 +127,7 @@ void Session::doWrite() {
                     self->doWrite();
                 }));
     } catch (...) {
-        LOG_ERROR(std::format("Session {} encode failed", id_));
+        LOG_ERROR("Session {} encode failed", id_);
         is_writing_ = false;
         close();
     }

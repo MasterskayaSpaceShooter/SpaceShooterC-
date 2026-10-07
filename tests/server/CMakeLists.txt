@@ -6,10 +6,10 @@ add_executable(unit_tests_server
 
 target_include_directories(unit_tests_server PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 
-target_link_libraries(unit_tests_server  PRIVATE
-    common
-    GTest::gmock
-    GTest::gtest_main
+target_link_libraries(unit_tests_server PRIVATE
+        common
+        GTest::gmock
+        GTest::gtest_main
 )
 
 include(GoogleTest)
