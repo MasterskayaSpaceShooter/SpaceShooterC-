@@ -98,13 +98,12 @@ private:
     boost::asio::ip::tcp::socket socket_;          ///< TCP-сокет подключения
     const SessionId id_;                           ///< Уникальный ID сессии
     std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
-    network::FrameCodec& codec_;                   ///< Кодек протокола
+    [[maybe_unused]] network::FrameCodec& codec_;  ///< Кодек протокола
     boost::asio::strand<boost::asio::any_io_executor> strand_;
-
     static constexpr size_t READ_BLOCK_SIZE = 4096;  ///< Размер блока чтения
     boost::beast::flat_buffer read_buffer_;          ///< накопитель
 
     std::atomic<bool> closed_{false};               ///< Флаг активности потока
     std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь исходящих кадров
-    bool is_writing_{false};                        ///< Флаг активности операции async_write
+    [[maybe_unused]] bool is_writing_{false};       ///< Флаг активности операции async_write
 };
