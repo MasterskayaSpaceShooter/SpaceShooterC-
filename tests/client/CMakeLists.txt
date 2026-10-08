@@ -1,9 +1,15 @@
-add_executable(unit_tests_client test_client.cpp) # Путь без префикса src/
+find_package(GTest REQUIRED)
+include(GoogleTest)
 
-target_link_libraries(unit_tests_client PRIVATE
-    common
-    GTest::gtest_main
+add_executable(tcp_client_tests
+    test_tcp_client.cpp
+
 )
 
-include(GoogleTest)
-gtest_discover_tests(unit_tests_client)
+target_link_libraries(tcp_client_tests PRIVATE
+    tcp_client
+    GTest::GTest
+    GTest::Main
+)
+
+gtest_discover_tests(tcp_client_tests)

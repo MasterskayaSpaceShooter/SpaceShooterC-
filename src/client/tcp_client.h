@@ -1,12 +1,18 @@
 #pragma once
+#include <array>
+#include <atomic>
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <string_view>
 #include <vector>
 
-class FrameCodec;
+#include "frame_codec.h"
+#include "logger.h"
 
 /**
  * @brief Асинхронный сетевой TCP-клиент.
@@ -25,11 +31,10 @@ public:
 
     /**
      * @brief Конструктор сетевого клиента.
-     * @details Взаимодействует с членами класса: инициализирует socket_, codec_, read_buffer_.
+     * @details Взаимодействует с членами класса: инициализирует socket_, read_buffer_.
      * @param io_context Входные данные: Контекст ввода-вывода Asio.
-     * @param codec Входные данные: Ссылка на кодек протокола.
      */
-    TcpClient(boost::asio::io_context& io_context, FrameCodec& codec);
+    explicit TcpClient(boost::asio::io_context& io_context);
 
     /**
      * @brief Деструктор клиента. Закрывает сокет.
@@ -48,7 +53,7 @@ public:
 
     /**
      * @brief Потокобезопасно отправляет кадр данных на сервер.
-     * @details Взаимодействует с полями: write_queue_, write_mutex_, is_writing_, socket_.
+     * @details Payload большего допустимого размера отклоняется и логируется.
      * @param data Входные данные: Вектор байт кадра.
      * @outputs Выходных значений нет.
      */
@@ -56,11 +61,11 @@ public:
 
     /**
      * @brief Принудительно закрывает соединение с сервером.
-     * @details Взаимодействует с полями: socket_, is_connected_, disconnect_cb_.
+     * @details Все изменения состояния и операции с сокетом сериализуются на strand_.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
-    void disconnect();
+    void disconnect() noexcept;
 
     /**
      * @brief Устанавливает колбэк на получение входящих кадров от сервера.
@@ -94,9 +99,32 @@ public:
     }
 
 private:
+    // Логирование и отключение при ошибках в контексте асинхронных операций
+    void logAndDisconnect(std::string_view context_name) noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
+    void handleWriteSetupError(std::string_view context_name) noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
+    void invokeConnectCallback(std::function<void(bool)>& callback,
+                               bool status,
+                               std::string_view context_name) noexcept;
+
+    // Проверяет, что поколение подключения совпадает с активным на момент вызова (для защиты от гонок)
+    bool isValidGeneration(uint64_t generation) const noexcept;
+
+    // Логирование ошибок без отключения (например, при ошибках в колбэках)
+    void logErrorOnly(std::string_view context_name) noexcept;
+
+    // Проверяет, что клиент не остановлен, не отключен и не в процессе отключения
+    bool isStopped() const noexcept;
+
+    // Логирование и вызов колбэка подключения при ошибках в контексте асинхронных операций
+    void failConnect(std::string_view reason) noexcept;
+
     /**
      * @brief Асинхронно считывает входящие байты от сервера (async_read_some).
-     * @details Взаимодействует с полями: socket_, read_buffer_, codec_, message_cb_.
+     * @details Взаимодействует с полями: socket_, read_buffer_, message_cb_.
      * @inputs Параметров нет (колбэк Asio).
      * @outputs Выходных значений нет.
      */
@@ -104,22 +132,28 @@ private:
 
     /**
      * @brief Асинхронно записывает кадр из очереди на сервер (async_write).
-     * @details Взаимодействует с полями: socket_, write_queue_, write_mutex_, is_writing_, codec_.
+     * @details Взаимодействует с полями: socket_, write_queue_, is_writing_.
      * @inputs Параметров нет (колбэк Asio).
      * @outputs Выходных значений нет.
      */
     void doWrite();
 
-    boost::asio::ip::tcp::socket socket_;  ///< TCP-сокет клиента
-    FrameCodec& codec_;                    ///< Кодек протокола
-
-    bool is_connected_{false};          ///< Флаг подключения
-    std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
+    boost::asio::strand<boost::asio::io_context::executor_type>
+        strand_;  ///< Стрэнд для последовательного выполнения операций
+    boost::asio::ip::tcp::socket socket_;                       ///< TCP-сокет клиента
+    std::shared_ptr<boost::asio::ip::tcp::resolver> resolver_;  ///< Resolver текущего подключения
+    std::atomic<bool> is_connected_{false};                     ///< Флаг подключения
+    std::atomic<bool> disconnect_requested_{false};
+    uint64_t disconnect_generation_{0};      ///< Изменяется и читается только на strand_
+    bool is_connecting_{false};              ///< Изменяется только на strand_
+    uint64_t active_connect_generation_{0};  ///< Поколение подключения на strand_
+    std::function<void(bool)> pending_connect_callback_;
+    // std::vector<uint8_t> read_buffer_;  ///< Временный буфер чтения
+    boost::beast::flat_buffer read_buffer_;
     static constexpr size_t READ_BLOCK_SIZE = 4096;
 
-    std::mutex write_mutex_;                        ///< Мьютекс очереди отправки
-    std::queue<std::vector<uint8_t>> write_queue_;  ///< Очередь кадра на отправку
-    bool is_writing_{false};                        ///< Флаг активной записи
+    std::queue<std::shared_ptr<network::FrameCodec::Frame>> write_queue_;  ///< Очередь кадров на отправку
+    bool is_writing_{false};                                               ///< Флаг активной записи
 
     MessageCallback message_cb_;        ///< Обработчик входящего кадра
     DisconnectCallback disconnect_cb_;  ///< Обработчик отключения
