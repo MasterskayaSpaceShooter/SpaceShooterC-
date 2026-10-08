@@ -102,7 +102,30 @@ void resolveElasticImpulse(const Vector2D& pos1,
                            Scalar mass1,
                            const Vector2D& pos2,
                            Vector2D& vel2,
-                           Scalar mass2);
+                           Scalar mass2) {
+    // Unit normal from body 1 to body 2.
+    const auto n = (pos2 - pos1).normalized();
+
+    // Relative normal velocity. Negative means approaching.
+    const auto rel_vel = vel2 - vel1;
+    const auto vn = rel_vel.x * n.x + rel_vel.y * n.y;
+
+    // Separating or tangent: no impulse needed.
+    if (vn >= 0.0) {
+        return;
+    }
+
+    // Inverse masses: lighter body receives larger velocity change.
+    const auto inv_m1 = 1.0 / mass1;
+    const auto inv_m2 = 1.0 / mass2;
+
+    // Perfectly elastic impulse magnitude, e = 1.
+    const auto j = -2.0 * vn / (inv_m1 + inv_m2);
+
+    // Equal and opposite impulses along the contact normal.
+    vel1 -= n * (j * inv_m1);
+    vel2 += n * (j * inv_m2);
+}
 
 }  // namespace collision
 
