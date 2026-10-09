@@ -1,29 +1,10 @@
 #include <atomic>
+#include <event_bus.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <logger.h>
 #include <thread>
 #include <vector>
-
-/*
-// МОК ЛОГЕРА
-
-class LoggerMock {
-public:
-    MOCK_METHOD(void, info, (const std::string& message), ());
-    MOCK_METHOD(void, error, (const std::string& message), ());
-};
-
-LoggerMock& loggerMock() {
-    static testing::NiceMock<LoggerMock> instance;
-    return instance;
-}
-
-#define LOG_INFO(message) ::loggerMock().info(message)
-#define LOG_ERROR(message) ::loggerMock().error(message)
-*/
-
-#include <event_bus.h>
 
 namespace kildim_tests {
 

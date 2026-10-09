@@ -2,7 +2,7 @@
 
 std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
     if (!event_bus) {
-        LOG_ERROR("NetworkResponseRouter::create: event_bus не может быть nullptr");
+        LOG_ERROR("[NetworkResponseRouter] NetworkResponseRouter::create: event_bus не может быть nullptr");
         return nullptr;
     }
     std::shared_ptr<NetworkResponseRouter> router(new NetworkResponseRouter(std::move(event_bus)));
@@ -36,12 +36,13 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
 }
 
 void NetworkResponseRouter::onClientConnected(const ClientConnectedEvent& event) {
-    LOG_INFO("Клиент подключен: session_id={}, адрес={}", event.session_id, event.remote_address);
+    LOG_INFO("[NetworkResponseRouter] Клиент подключен: session_id={}, адрес={}",
+             event.session_id,
+             event.remote_address);
 }
 
 void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& event) {
-    (void)event;
-    LOG_INFO("Клиент отключен: session_id={}", event.session_id);
+    LOG_INFO("[NetworkResponseRouter] Клиент отключен: session_id={}", event.session_id);
 }
 
 void NetworkResponseRouter::setupSubscriptions() {
