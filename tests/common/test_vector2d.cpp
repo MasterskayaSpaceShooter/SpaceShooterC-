@@ -82,6 +82,11 @@ TEST(Vector2DTest, Equality) {
     EXPECT_FALSE(a == c);
     EXPECT_FALSE(a != b);
     EXPECT_TRUE(a != c);
+
+    Scalar x = 0.2 + 0.1;
+    const Vector2D d(0, x);
+    const Vector2D e(0, 0.3);
+    EXPECT_TRUE(d == e);
 }
 
 TEST(Vector2DTest, LengthSquared) {

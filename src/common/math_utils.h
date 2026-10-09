@@ -7,6 +7,7 @@ namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
+constexpr double kEps = 1e-12;
 
 struct Vector2D {
     Scalar x = 0;
@@ -39,7 +40,9 @@ struct Vector2D {
         return rhs;
     }
 
-    bool operator==(const Vector2D&) const = default;
+    bool operator==(const Vector2D& other) const {
+        return std::fabs(x - other.x) < kEps && std::fabs(y - other.y) < kEps;
+    }
 
     [[nodiscard]] Scalar lengthSquared() const;
     [[nodiscard]] Scalar length() const;

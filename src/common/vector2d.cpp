@@ -1,7 +1,7 @@
 #include "math_utils.h"
 
 namespace math {
-Vector2D::Vector2D(Scalar x, Scalar y) : x{x}, y{y} {};
+Vector2D::Vector2D(Scalar x, Scalar y) : x{x}, y{y} {}
 
 Vector2D& Vector2D::operator+=(const Vector2D& rhs) {
     x += rhs.x;
@@ -37,4 +37,4 @@ Vector2D& Vector2D::operator*=(Scalar s) {
     return Vector2D{x / len, y / len};
 }
 
-};  // namespace math
+}  // namespace math
