@@ -19,16 +19,22 @@ public:
     template <typename... A>
     void push(A&&... value) {
         std::lock_guard lock(mutex_);
-        queue_.push(std::forward<A>(value)...);
+        queue_.emplace(std::forward<A>(value)...);
     }
 
-    std::queue<T> drain() {
-        std::queue<T> res;
+    std::vector<T> drain() {
+        std::vector<T> result;
+        std::queue<T> temp;
         {
             std::lock_guard lock(mutex_);
-            std::swap(res, queue_);
+            std::swap(temp, queue_);
         }
-        return res;
+        result.reserve(temp.size());
+        while (!temp.empty()) {
+            result.push_back(std::move(temp.front()));
+            temp.pop();
+        }
+        return result;
     }
 
     bool empty() const {
