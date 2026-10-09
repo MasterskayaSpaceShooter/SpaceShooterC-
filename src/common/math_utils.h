@@ -103,11 +103,19 @@ void resolveElasticImpulse(const Vector2D& pos1,
                            const Vector2D& pos2,
                            Vector2D& vel2,
                            Scalar mass2) {
+    assert(mass1 > 0 && mass2 > 0);
     // Unit normal from body 1 to body 2.
-    const auto n = (pos2 - pos1).normalized();
+    const auto delta = pos2 - pos1;
+    const auto sqr_dist = delta.x * delta.x + delta.y * delta.y;
+    if (sqr_dist < kEps) {
+        assert(false && "Coincident positions: contact normal undefined");
+        return;
+    }
+    const auto n = delta / std::sqrt(sqr_dist);
 
     // Relative normal velocity. Negative means approaching.
     const auto rel_vel = vel2 - vel1;
+    // TODO: change to .dot() after Vector2d implementation
     const auto vn = rel_vel.x * n.x + rel_vel.y * n.y;
 
     // Separating or tangent: no impulse needed.
@@ -123,8 +131,9 @@ void resolveElasticImpulse(const Vector2D& pos1,
     const auto j = -2.0 * vn / (inv_m1 + inv_m2);
 
     // Equal and opposite impulses along the contact normal.
-    vel1 -= n * (j * inv_m1);
-    vel2 += n * (j * inv_m2);
+    const auto impulse = n * j;
+    vel1 -= impulse * inv_m1;
+    vel2 += impulse * inv_m2;
 }
 
 }  // namespace collision
