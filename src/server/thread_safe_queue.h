@@ -3,7 +3,6 @@
 #include <mutex>
 #include <queue>
 #include <utility>
-#include <vector>
 template <typename T>
 class ThreadSafeQueue {
 public:
@@ -17,20 +16,32 @@ public:
         queue_.push(std::move(value));
     }
 
-    std::vector<T> drain() {
-        std::vector<T> result;
+    template <typename... A>
+    void push(A&&... value) {
+        std::lock_guard lock(mutex_);
+        queue_.push(std::forward<A>(value)...);
+    }
+
+    std::queue<T> drain() {
+        std::queue<T> res;
         {
             std::lock_guard lock(mutex_);
-            result.reserve(queue_.size());
-            while (!queue_.empty()) {
-                result.push_back(std::move(queue_.front()));
-                queue_.pop();
-            }
+            std::swap(res, queue_);
         }
-        return result;
+        return res;
+    }
+
+    bool empty() const {
+        std::lock_guard lock(mutex_);
+        return queue_.empty();
+    }
+
+    size_t size() const {
+        std::lock_guard lock(mutex_);
+        return queue_.size();
     }
 
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::queue<T> queue_;
 };

@@ -29,10 +29,10 @@ TEST(ThreadSafeQueue, SafeQueueTest) {
         }
         while (counter < kWriters * kPerWriters) {
             auto batch = tqueue.drain();
-            for (size_t i = 0; i < batch.size(); ++i) {
+            while (!batch.empty()) {
                 ++counter;
+                batch.pop();
             }
-            batch.clear();
         }
     });
 
