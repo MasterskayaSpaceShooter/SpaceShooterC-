@@ -17,7 +17,7 @@ public:
     }
 
     template <typename... A>
-    void push(A&&... value) {
+    void emplace(A&&... value) {
         std::lock_guard lock(mutex_);
         queue_.emplace(std::forward<A>(value)...);
     }
