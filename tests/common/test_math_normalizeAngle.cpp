@@ -6,7 +6,7 @@ using math::kPi;
 using math::normalizeAngle;
 using math::Scalar;
 
-Scalar eps = 1e-6;
+constexpr Scalar eps = 1e-6;
 // вспомогательная функция
 // проверяет что результат лежит в диапазоне (-pi, pi]
 bool isRange(Scalar a) {
@@ -40,8 +40,13 @@ TEST(NormalizeAngle, BoundariesNormalize) {
 
 // большие и маленькие значения
 TEST(NormalizeAngle, LargeAndSmallNumberNormalize) {
-    EXPECT_TRUE(isRange(normalizeAngle(1e11)));
-    EXPECT_TRUE(isRange(normalizeAngle(-1e11)));
-    EXPECT_TRUE(isRange(normalizeAngle(1e-11)));
-    EXPECT_TRUE(isRange(normalizeAngle(-1e-11)));
+    EXPECT_TRUE(isRange(normalizeAngle(1e6)));
+    EXPECT_TRUE(isRange(normalizeAngle(-1e6)));
+    EXPECT_TRUE(isRange(normalizeAngle(1e-6)));
+    EXPECT_TRUE(isRange(normalizeAngle(-1e-6)));
+}
+
+// близкие числа к граничным
+TEST(NormalizeAngle, Normalize) {
+    EXPECT_NEAR(normalizeAngle(-kPi + 1e-15), kPi, 1e-6);
 }

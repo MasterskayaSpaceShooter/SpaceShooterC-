@@ -54,12 +54,14 @@ struct Vector2D {
 /// Wraps an angle in radians into (-pi, pi]; exactly -pi folds to +pi.
 /// \param angle_rad angle in radians, any magnitude
 /// \return equivalent angle in (-pi, pi]
-[[nodiscard]] Scalar normalizeAngle(Scalar angle_rad) {
+[[nodiscard]] inline Scalar normalizeAngle(Scalar angle_rad) {
     // Вычисляем кол-во полных оборотов
-    long long x = static_cast<long long>(std::round(angle_rad / (2 * kPi)));
+    long x = static_cast<long>(std::round(angle_rad / (2 * kPi)));
     // Вычитаем целое число оборотов и получаем нужный угол
     Scalar ans = angle_rad - x * (2 * kPi);
-    if (ans == -kPi)  // граничный случай -kPi -> kPi
+    Scalar kEps = 1e-6;
+    // граничный случай -kPi -> kPi, учитывает погрешность
+    if (std::abs(ans + kPi) < kEps)
         return kPi;
     return ans;
 }
