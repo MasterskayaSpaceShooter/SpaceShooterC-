@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <numbers>
 
 namespace math {
@@ -33,10 +34,17 @@ struct Vector2D {
         return lhs;
     }
 
+    [[nodiscard]] friend Vector2D operator*(Scalar s, Vector2D rhs) {
+        rhs *= s;
+        return rhs;
+    }
+
     bool operator==(const Vector2D&) const = default;
 
     [[nodiscard]] Scalar lengthSquared() const;
     [[nodiscard]] Scalar length() const;
+    /// Единичный вектор того же направления.
+    /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
 };
 

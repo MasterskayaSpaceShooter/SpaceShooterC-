@@ -84,4 +84,54 @@ TEST(Vector2DTest, Equality) {
     EXPECT_TRUE(a != c);
 }
 
+TEST(Vector2DTest, LengthSquared) {
+    const Vector2D a(3.0, 4.0);
+    EXPECT_DOUBLE_EQ(a.lengthSquared(), 25.0);
+    const Vector2D unit(1.0, 0.0);
+    EXPECT_DOUBLE_EQ(unit.lengthSquared(), 1.0);
+    const Vector2D zero(0.0, 0.0);
+    EXPECT_DOUBLE_EQ(zero.lengthSquared(), 0.0);
+}
+
+TEST(Vector2DTest, Length) {
+    const Vector2D a(3.0, 4.0);
+    EXPECT_DOUBLE_EQ(a.length(), 5.0);
+    const Vector2D negative(-3.0, -4.0);
+    EXPECT_DOUBLE_EQ(negative.length(), 5.0);
+    const Vector2D zero(0.0, 0.0);
+    EXPECT_DOUBLE_EQ(zero.length(), 0.0);
+}
+
+TEST(Vector2DTest, NormalizedUpVector) {
+    const Vector2D v(0.0, 10.0);
+    const Vector2D n = v.normalized();
+    EXPECT_DOUBLE_EQ(n.x, 0.0);
+    EXPECT_DOUBLE_EQ(n.y, 1.0);
+}
+
+TEST(Vector2DTest, NormalizedNegativeCoordinates) {
+    const Vector2D v(0.0, -10.0);
+    const Vector2D n = v.normalized();
+    EXPECT_DOUBLE_EQ(n.x, 0.0);
+    EXPECT_DOUBLE_EQ(n.y, -1.0);
+}
+
+TEST(Vector2DTest, NormalizedGenericVector) {
+    const Vector2D v(3.0, 4.0);
+    const Vector2D n = v.normalized();
+    EXPECT_DOUBLE_EQ(n.x, 0.6);
+    EXPECT_DOUBLE_EQ(n.y, 0.8);
+    EXPECT_DOUBLE_EQ(n.length(), 1.0);
+    // Исходный вектор не мутируется
+    EXPECT_DOUBLE_EQ(v.x, 3.0);
+    EXPECT_DOUBLE_EQ(v.y, 4.0);
+}
+
+TEST(Vector2DTest, NormalizedZeroVector) {
+    const Vector2D zero(0.0, 0.0);
+    const Vector2D n = zero.normalized();
+    EXPECT_DOUBLE_EQ(n.x, 0.0);
+    EXPECT_DOUBLE_EQ(n.y, 0.0);
+}
+
 }  // namespace

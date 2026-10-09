@@ -21,8 +21,20 @@ Vector2D& Vector2D::operator*=(Scalar s) {
     return *this;
 }
 
-//bool Vector2D::operator==(const Vector2D& rhs) const {
-//    return x == rhs.x && y == rhs.y;
-//}
+[[nodiscard]] Scalar Vector2D::lengthSquared() const {
+    return x * x + y * y;
+}
+
+[[nodiscard]] Scalar Vector2D::length() const {
+    return std::sqrt(lengthSquared());
+}
+
+[[nodiscard]] Vector2D Vector2D::normalized() const {
+    const Scalar len = length();
+    if (len == 0) {
+        return {};
+    }
+    return Vector2D{x / len, y / len};
+}
 
 };  // namespace math
