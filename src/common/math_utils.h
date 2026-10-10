@@ -54,7 +54,13 @@ struct Vector2D {
 /// Wraps an angle in radians into (-pi, pi]; exactly -pi folds to +pi.
 /// \param angle_rad angle in radians, any magnitude
 /// \return equivalent angle in (-pi, pi]
-[[nodiscard]] Scalar normalizeAngle(Scalar angle_rad);
+[[nodiscard]] inline Scalar normalizeAngle(Scalar angle_rad) {
+    constexpr Scalar two_kPi = 2 * kPi;
+    Scalar ans = std::remainder(angle_rad, two_kPi);
+    if (ans == -kPi)
+        return kPi;
+    return ans;
+}
 
 /// Rotates `current_angle` toward `target_angle` by at most
 /// `max_angular_velocity * dt` rad, taking the shortest path and
