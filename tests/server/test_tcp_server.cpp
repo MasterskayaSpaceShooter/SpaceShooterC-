@@ -101,6 +101,9 @@ TEST_F(ServerFixture, AcceptsClientAndPublishesConnectedEvent) {
         return event_received;
     });
 
+    lock.unlock();
+    subscription.disconnect();
+
     ASSERT_TRUE(received) << "Server should publish ClientConnectedEvent";
 
     EXPECT_EQ(received_id, 1);
@@ -134,6 +137,9 @@ TEST_F(ServerFixture, AcceptsMultipleClientsWithUniqueSessionIds) {
     const bool all_received = condition.wait_for(lock, 2s, [&] {
         return received_ids.size() == client_count;
     });
+
+    lock.unlock();
+    subscription.disconnect();
 
     ASSERT_TRUE(all_received) << "Server should accept every client";
 
