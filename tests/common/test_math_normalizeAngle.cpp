@@ -7,7 +7,6 @@ using math::kPi;
 using math::normalizeAngle;
 using math::Scalar;
 
-constexpr Scalar kEps = 1e-6;
 // вспомогательная функция
 // проверяет что результат лежит в диапазоне (-pi, pi]
 bool isRange(Scalar a) {
