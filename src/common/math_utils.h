@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cmath>
 #include <numbers>
 
@@ -97,12 +98,12 @@ namespace collision {
 /// \pre mass1 > 0, mass2 > 0
 /// \pre pos1 != pos2
 /// \post dot(vel2 - vel1, normalize(pos2 - pos1)) >= 0 (separating)
-void resolveElasticImpulse(const Vector2D& pos1,
-                           Vector2D& vel1,
-                           Scalar mass1,
-                           const Vector2D& pos2,
-                           Vector2D& vel2,
-                           Scalar mass2) {
+inline void resolveElasticImpulse(const Vector2D& pos1,
+                                  Vector2D& vel1,
+                                  Scalar mass1,
+                                  const Vector2D& pos2,
+                                  Vector2D& vel2,
+                                  Scalar mass2) {
     assert(mass1 > 0 && mass2 > 0);
     // Unit normal from body 1 to body 2.
     const auto delta = pos2 - pos1;
@@ -111,7 +112,7 @@ void resolveElasticImpulse(const Vector2D& pos1,
         assert(false && "Coincident positions: contact normal undefined");
         return;
     }
-    const auto n = delta / std::sqrt(sqr_dist);
+    const auto n = delta * (1.0 / std::sqrt(sqr_dist));
 
     // Relative normal velocity. Negative means approaching.
     const auto rel_vel = vel2 - vel1;

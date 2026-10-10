@@ -1,6 +1,6 @@
 add_executable(unit_tests_common
         test_frame_codec.cpp
-        #        test_math_elastic_impulse.cpp
+        test_math_elastic_impulse.cpp
         test_vector2d.cpp
 )
 
