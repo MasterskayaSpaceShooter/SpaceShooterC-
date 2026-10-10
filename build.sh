@@ -16,7 +16,7 @@ CONFIG=$2
 case $COMPONENT in
     server) TARGETS="server_app" ;;
     client) TARGETS="client_app" ;;
-    tests)  TARGETS="unit_tests_common unit_tests_server unit_tests_client" ;;
+    tests)  TARGETS="unit_tests_common unit_tests_server tcp_client_tests" ;;
     *) echo "Ошибка: Неверный компонент. Допустимы: server, client, tests"; exit 1 ;;
 esac # <--- ИСПРАВЛЕНО: Вместо fi теперь здесь правильно написано esac
 

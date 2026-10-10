@@ -1,5 +1,6 @@
 add_executable(unit_tests_common
         test_frame_codec.cpp
+        test_vector2d.cpp
 )
 
 # Линкуем тестируемую статическую библиотеку common и таргет gtest из Конана

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cmath>
 #include <numbers>
 
 namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
+constexpr double kEps = 1e-12;
 
 struct Vector2D {
     Scalar x = 0;
@@ -33,10 +35,19 @@ struct Vector2D {
         return lhs;
     }
 
-    bool operator==(const Vector2D&) const = default;
+    [[nodiscard]] friend Vector2D operator*(Scalar s, Vector2D rhs) {
+        rhs *= s;
+        return rhs;
+    }
+
+    bool operator==(const Vector2D& other) const {
+        return std::fabs(x - other.x) < kEps && std::fabs(y - other.y) < kEps;
+    }
 
     [[nodiscard]] Scalar lengthSquared() const;
     [[nodiscard]] Scalar length() const;
+    /// Единичный вектор того же направления.
+    /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
 };
 
