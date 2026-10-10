@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cmath>
 #include <numbers>
 
@@ -46,6 +47,7 @@ struct Vector2D {
 
     [[nodiscard]] Scalar lengthSquared() const;
     [[nodiscard]] Scalar length() const;
+    [[nodiscard]] Scalar dot(const Vector2D& other) const noexcept;
     /// Единичный вектор того же направления.
     /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
@@ -97,12 +99,43 @@ namespace collision {
 /// \pre mass1 > 0, mass2 > 0
 /// \pre pos1 != pos2
 /// \post dot(vel2 - vel1, normalize(pos2 - pos1)) >= 0 (separating)
-void resolveElasticImpulse(const Vector2D& pos1,
-                           Vector2D& vel1,
-                           Scalar mass1,
-                           const Vector2D& pos2,
-                           Vector2D& vel2,
-                           Scalar mass2);
+inline void resolveElasticImpulse(const Vector2D& pos1,
+                                  Vector2D& vel1,
+                                  Scalar mass1,
+                                  const Vector2D& pos2,
+                                  Vector2D& vel2,
+                                  Scalar mass2) {
+    assert(mass1 > 0 && mass2 > 0);
+    // Unit normal from body 1 to body 2.
+    const auto delta = pos2 - pos1;
+    const auto sqr_dist = delta.x * delta.x + delta.y * delta.y;
+    if (sqr_dist < kEps) {
+        assert(false && "Coincident positions: contact normal undefined");
+        return;
+    }
+    const auto n = delta * (1.0 / std::sqrt(sqr_dist));
+
+    // Relative normal velocity. Negative means approaching.
+    const auto rel_vel = vel2 - vel1;
+    const auto vn = rel_vel.dot(n);
+
+    // Separating or tangent: no impulse needed.
+    if (vn >= 0.0) {
+        return;
+    }
+
+    // Inverse masses: lighter body receives larger velocity change.
+    const auto inv_m1 = 1.0 / mass1;
+    const auto inv_m2 = 1.0 / mass2;
+
+    // Perfectly elastic impulse magnitude, e = 1.
+    const auto j = -2.0 * vn / (inv_m1 + inv_m2);
+
+    // Equal and opposite impulses along the contact normal.
+    const auto impulse = n * j;
+    vel1 -= impulse * inv_m1;
+    vel2 += impulse * inv_m2;
+}
 
 }  // namespace collision
 
