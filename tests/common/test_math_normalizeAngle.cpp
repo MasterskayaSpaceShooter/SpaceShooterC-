@@ -48,5 +48,5 @@ TEST(NormalizeAngle, LargeAndSmallNumberNormalize) {
 
 // близкие числа к граничным
 TEST(NormalizeAngle, Normalize) {
-    EXPECT_NEAR(normalizeAngle(-kPi + 1e-15), kPi, 1e-6);
+    EXPECT_NEAR(normalizeAngle(-kPi + 1e-15), -kPi + 1e-15, eps);
 }

@@ -56,10 +56,8 @@ struct Vector2D {
 /// \return equivalent angle in (-pi, pi]
 [[nodiscard]] inline Scalar normalizeAngle(Scalar angle_rad) {
     constexpr Scalar two_kPi = 2 * kPi;
-    constexpr Scalar kEps = 1e-6;
     Scalar ans = std::remainder(angle_rad, two_kPi);
-    // граничный случай -kPi -> kPi, учитывает погрешность
-    if (std::abs(ans + kPi) < kEps)
+    if (ans == -kPi)
         return kPi;
     return ans;
 }
