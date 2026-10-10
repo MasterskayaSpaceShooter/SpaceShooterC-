@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 project(SpaceShooter VERSION 0.1 LANGUAGES CXX)
 
-if(NOT MSVC)
+if (NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wextra -Wpedantic")
-else()
+else ()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /Zc:preprocessor")
-endif()
+endif ()
 
 # Экспорт compile_commands.json для корректной работы IntelliSense в IDE
 # (VS Code C/C++, clangd и пр.): редактор получит include-пути Boost/GTest из Conan
@@ -18,21 +18,33 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/out")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/out")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/out")
 
-if(WIN32)
+if (WIN32)
     add_compile_definitions(_WIN32_WINNT=0x0A00) # Макрос для Boost.Asio на Windows 10+
-endif()
+endif ()
 
 # Находим пакет Boost, предоставленный Conan
 find_package(Boost REQUIRED COMPONENTS headers)
+
+# ---- Clang-format integration ----
+option(ENABLE_CLANG_FORMAT "Enable clang-format targets" ON)
+
+if (ENABLE_CLANG_FORMAT)
+    include(cmake/clang-format.cmake)
+endif ()
 
 # Переходим в папку с исходным кодом
 add_subdirectory(src)
 
 # Настройка тестов
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
-    if(BUILD_TESTING)
+    if (BUILD_TESTING)
         find_package(GTest REQUIRED CONFIG)
         add_subdirectory(tests)
-    endif()
-endif()
+    endif ()
+endif ()
+
+# Auto-register all targets (must be AFTER all add_subdirectory calls)
+if (ENABLE_CLANG_FORMAT AND CLANG_FORMAT_EXE)
+    auto_clang_format_all()
+endif ()
