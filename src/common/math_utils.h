@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cmath>
 #include <numbers>
 
 namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
+constexpr double kEps = 1e-12;
 
 struct Vector2D {
     Scalar x = 0;
@@ -33,17 +35,32 @@ struct Vector2D {
         return lhs;
     }
 
-    bool operator==(const Vector2D&) const = default;
+    [[nodiscard]] friend Vector2D operator*(Scalar s, Vector2D rhs) {
+        rhs *= s;
+        return rhs;
+    }
+
+    bool operator==(const Vector2D& other) const {
+        return std::fabs(x - other.x) < kEps && std::fabs(y - other.y) < kEps;
+    }
 
     [[nodiscard]] Scalar lengthSquared() const;
     [[nodiscard]] Scalar length() const;
+    /// Единичный вектор того же направления.
+    /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
 };
 
 /// Wraps an angle in radians into (-pi, pi]; exactly -pi folds to +pi.
 /// \param angle_rad angle in radians, any magnitude
 /// \return equivalent angle in (-pi, pi]
-[[nodiscard]] Scalar normalizeAngle(Scalar angle_rad);
+[[nodiscard]] inline Scalar normalizeAngle(Scalar angle_rad) {
+    constexpr Scalar two_kPi = 2 * kPi;
+    Scalar ans = std::remainder(angle_rad, two_kPi);
+    if (ans == -kPi)
+        return kPi;
+    return ans;
+}
 
 /// Rotates `current_angle` toward `target_angle` by at most
 /// `max_angular_velocity * dt` rad, taking the shortest path and

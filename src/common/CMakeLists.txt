@@ -13,6 +13,7 @@ target_sources(common PRIVATE
         logger.h
         frame_codec.h
         math_utils.h
+        vector2d.cpp
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
