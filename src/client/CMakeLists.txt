@@ -1,5 +1,6 @@
 add_library(tcp_client STATIC
     tcp_client.cpp
+    client_world.cpp
 )
 
 # Публично отдаём include-пути, чтобы все, кто линкуется к tcp_client, видели заголовки
