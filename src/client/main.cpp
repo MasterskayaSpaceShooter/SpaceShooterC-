@@ -1,6 +1,7 @@
 #include <boost/asio.hpp>
-#include <iostream>
+#include <memory>
 
+#include "logger.h"
 #include "tcp_client.h"
 
 int main() {
@@ -10,15 +11,15 @@ int main() {
 
         client->connect("127.0.0.1", 8080, [](bool status) {
             if (status) {
-                std::cout << "[Client] Connected successfully.\n";
+                LOG_INFO("[Client] Connected successfully.");
             } else {
-                std::cout << "[Client] Connection failed.\n";
+                LOG_ERROR("[Client] Connection failed.");
             }
         });
 
         io_context.run();
     } catch (const std::exception& e) {
-        std::cerr << "[Client] exception: " << e.what() << std::endl;
+        LOG_ERROR("[Client] exception: {}", e.what());
         return 1;
     }
     return 0;
