@@ -13,6 +13,7 @@ target_sources(common PRIVATE
         logger.h
         frame_codec.h
         math_utils.h
+        math_utils.cpp
         vector2d.cpp
         entity_snapshot.h
 )
