@@ -1,7 +1,25 @@
 #include <boost/asio.hpp>
 #include <iostream>
 
+#include "tcp_client.h"
+
 int main() {
-    std::cout << "[Client] SpaceShooterC- Client Connected." << std::endl;
+    try {
+        boost::asio::io_context io_context;
+        auto client = std::make_shared<TcpClient>(io_context);
+
+        client->connect("127.0.0.1", 8080, [](bool status) {
+            if (status) {
+                std::cout << "[Client] Connected successfully.\n";
+            } else {
+                std::cout << "[Client] Connection failed.\n";
+            }
+        });
+
+        io_context.run();
+    } catch (const std::exception& e) {
+        std::cerr << "[Client] exception: " << e.what() << std::endl;
+        return 1;
+    }
     return 0;
 }
