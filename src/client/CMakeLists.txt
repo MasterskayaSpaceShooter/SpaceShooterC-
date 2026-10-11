@@ -10,7 +10,7 @@ target_include_directories(tcp_client PUBLIC
 target_link_libraries(tcp_client PUBLIC
     common
     Boost::headers
-    pthread
+    Threads::Threads
 )
 
 add_executable(client_app main.cpp)
