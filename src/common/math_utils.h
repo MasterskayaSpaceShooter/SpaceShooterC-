@@ -69,7 +69,10 @@ struct Vector2D {
 /// clamping to `target_angle` on the final tick (no overshoot).
 /// \pre max_angular_velocity >= 0, dt >= 0
 /// \return new heading in (-pi, pi]
-[[nodiscard]] Scalar rotateTowards(Scalar current_angle, Scalar target_angle, Scalar max_angular_velocity, Scalar dt) {
+[[nodiscard]] inline Scalar rotateTowards(Scalar current_angle,
+                                          Scalar target_angle,
+                                          Scalar max_angular_velocity,
+                                          Scalar dt) {
     const Scalar max_step = max_angular_velocity * dt;
     const Scalar cur = normalizeAngle(current_angle);
     const Scalar tgt = normalizeAngle(target_angle);
