@@ -14,6 +14,7 @@ target_sources(common PRIVATE
         frame_codec.h
         math_utils.h
         vector2d.cpp
+        entity_snapshot.h
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
