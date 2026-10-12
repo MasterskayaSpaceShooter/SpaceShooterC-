@@ -14,7 +14,7 @@ $Targets = @()
 switch ($Component) {
     "server" { $Targets = @("server_app") }
     "client" { $Targets = @("client_app") }
-    "tests"  { $Targets = @("unit_tests_common", "unit_tests_server", "unit_tests_client") }
+    "tests"  { $Targets = @("unit_tests_common", "unit_tests_server", "tcp_client_tests") }
 }
 
 # КАЖДАЯ конфигурация использует собственную папку сборки (build/Debug, build/Release),

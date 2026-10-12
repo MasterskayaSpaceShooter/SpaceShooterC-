@@ -24,6 +24,7 @@ endif()
 
 # Находим пакет Boost, предоставленный Conan
 find_package(Boost REQUIRED COMPONENTS headers)
+find_package(Threads REQUIRED)
 
 # Переходим в папку с исходным кодом
 add_subdirectory(src)

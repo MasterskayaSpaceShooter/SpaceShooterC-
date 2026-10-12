@@ -65,7 +65,7 @@ to_regex() {
 # ======================================== сборка, если бинарники не найдены
 # Бинарники складываются в out/<Config> (см. CMakeLists), поэтому ищем в обоих местах.
 need_build=0
-for t in unit_tests_common unit_tests_server unit_tests_client; do
+for t in unit_tests_common unit_tests_server tcp_client_tests; do
     found="$(find "$BUILD_DIR" "out/$CONFIG" -type f -name "$t" -perm -u+x 2>/dev/null | head -n 1)"
     if [ -z "$found" ]; then
         need_build=1
@@ -76,7 +76,7 @@ done
 if [ "$need_build" -eq 1 ]; then
     echo "Тестовые бинарники не найдены — собираю таргеты..."
     cmake --build "$BUILD_DIR" --config "$CONFIG" \
-        --target unit_tests_common unit_tests_server unit_tests_client
+        --target unit_tests_common unit_tests_server tcp_client_tests
 fi
 
 # ======================================================= построение фильтра
