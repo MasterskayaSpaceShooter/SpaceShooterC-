@@ -1,16 +1,13 @@
 #pragma once
 #include <string>
+
 #include "math_utils.h"
 
 namespace snapshot {
 
 using EntityId = int;
 
-enum class EntityType {
-    Ship,
-    Projectile,
-    Asteroid
-};
+enum class EntityType { Ship, Projectile, Asteroid };
 
 class EntitySnapshot {
     int id_;
@@ -23,4 +20,4 @@ class EntitySnapshot {
     std::string name_;
 };
 
-}
+}  // namespace snapshot
