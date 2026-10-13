@@ -45,7 +45,7 @@ struct Vector2D {
         return std::fabs(x - other.x) < kEps && std::fabs(y - other.y) < kEps;
     }
 
-    [[nodiscard]] Scalar lengthSquared() const;
+    [[nodiscard]] Scalar lengthSquared() const noexcept;
     [[nodiscard]] Scalar length() const;
     [[nodiscard]] Scalar dot(const Vector2D& other) const noexcept;
     /// Единичный вектор того же направления.
@@ -115,6 +115,8 @@ namespace collision {
                                                Scalar radius1,
                                                const Vector2D& pos2,
                                                Scalar radius2) noexcept {
+    assert(radius1 >= 0.0 && "Radius1 can't be negative!");
+    assert(radius2 >= 0.0 && "Radius2 can't be negative!");
     const auto delta = pos1 - pos2;
     const auto radius_sum = radius1 + radius2;
     return delta.lengthSquared() <= radius_sum * radius_sum;
