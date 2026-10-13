@@ -1,16 +1,33 @@
-#include <boost/asio.hpp>
 #include <iostream>
+
+#include "event_bus.h"
+#include "frame_codec.h"
+#include "logger.h"
+#include "network_context.h"
+#include "network_response_router.h"
+#include "tcp_server.h"
 
 int main() {
     try {
-        boost::asio::io_context io_context;
+        NetworkContext nc;
+        auto event_bus = events::EventBus::create();
+        network::FrameCodec frame_codec;
+        auto router = NetworkResponseRouter::create(event_bus);
+        auto server = std::make_shared<TcpServer>(nc.getContext(), 8080, event_bus, frame_codec);
 
-        std::cout << "[Server] SpaceShooterC- Server Started." << std::endl;
+        nc.start();
+        server->start();
+        LOG_INFO("[Server] SpaceShooterC- Server Started.");
 
-        // В следующих шагах здесь будет асинхронный прием подключений
-        io_context.run();
+        std::cin.get();  // блокирует до enter
+
+        server->stop();
+        nc.stop();
+        nc.wait();
+
     } catch (const std::exception& e) {
-        std::cerr << "[Server] Exception: " << e.what() << std::endl;
+        LOG_ERROR("[Server] Exception: {}", e.what());
+        return 1;
     }
     return 0;
 }

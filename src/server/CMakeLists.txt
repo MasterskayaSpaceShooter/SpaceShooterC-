@@ -6,6 +6,7 @@ add_executable(server_app
     network_response_router.cpp
     network_response_router.h
     network_context.h
+    tcp_server.cpp
 )
 
 target_link_libraries(server_app PRIVATE common)
