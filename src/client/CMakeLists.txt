@@ -7,6 +7,9 @@ add_library(client STATIC
     renderer.h
     null_input_provider.h
     null_renderer.h
+        client_state.h
+        game_controller.h
+        game_controller.cpp
 )
 
 # Публично отдаём include-пути, чтобы все, кто линкуется к client, видели заголовки
