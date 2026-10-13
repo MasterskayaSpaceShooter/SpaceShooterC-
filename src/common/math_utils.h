@@ -95,13 +95,23 @@ struct Vector2D {
 ///   V = (V + A*dt) * (1 - drag*dt);  P = P + V*dt
 /// \pre thrust_power >= 0, drag in [0,1], dt >= 0, drag*dt <= 1
 /// \pre `position` and `velocity` must not alias.
-void updateShipPhysics(Vector2D& position,
-                       Vector2D& velocity,
-                       Scalar angle,
-                       bool is_thrusting,
-                       Scalar thrust_power,
-                       Scalar drag,
-                       Scalar dt);
+inline void updateShipPhysics(Vector2D& position,
+                              Vector2D& velocity,
+                              Scalar angle,
+                              bool is_thrusting,
+                              Scalar thrust_power,
+                              Scalar drag,
+                              Scalar dt) {
+    if (is_thrusting) {
+        velocity.x += std::cos(angle) * thrust_power * dt;
+        velocity.y += std::sin(angle) * thrust_power * dt;
+    }
+
+    const Scalar drag_factor = 1.0 - drag * dt;
+
+    velocity *= drag_factor;
+    position += velocity * dt;
+}
 
 /// Clamps `position` into the world rectangle centered at the origin:
 /// x in [-world_width/2, +world_width/2], y in [-world_height/2, +world_height/2].
