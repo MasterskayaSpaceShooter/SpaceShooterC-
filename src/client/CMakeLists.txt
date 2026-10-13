@@ -1,17 +1,22 @@
 add_library(tcp_client STATIC
-    tcp_client.cpp
+        tcp_client.h
+        tcp_client.cpp
+        client_state.h
+        game_controller.h
+        game_controller.cpp
 )
 
 # Публично отдаём include-пути, чтобы все, кто линкуется к tcp_client, видели заголовки
 target_include_directories(tcp_client PUBLIC
-     ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(tcp_client PUBLIC
-    common
-    Boost::headers
-    Threads::Threads
+        common
+        Boost::headers
+        Threads::Threads
 )
 
 add_executable(client_app main.cpp)
+
 target_link_libraries(client_app PRIVATE tcp_client)
