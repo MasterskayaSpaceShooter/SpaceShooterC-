@@ -111,7 +111,10 @@ namespace collision {
 /// Criterion: (p1 - p2).lengthSquared() <= (r1 + r2)^2 —
 /// inclusive of exact tangency.
 /// \pre radius1 >= 0, radius2 >= 0
-[[nodiscard]] bool checkCircleCollision(const Vector2D& pos1, Scalar radius1, const Vector2D& pos2, Scalar radius2) noexcept {
+[[nodiscard]] inline bool checkCircleCollision(const Vector2D& pos1,
+                                               Scalar radius1,
+                                               const Vector2D& pos2,
+                                               Scalar radius2) noexcept {
     const auto delta = pos1 - pos2;
     const auto radius_sum = radius1 + radius2;
     return delta.lengthSquared() <= radius_sum * radius_sum;
@@ -123,12 +126,44 @@ namespace collision {
 /// \pre mass1 > 0, mass2 > 0
 /// \pre pos1 != pos2
 /// \post dot(vel2 - vel1, normalize(pos2 - pos1)) >= 0 (separating)
-void resolveElasticImpulse(const Vector2D& pos1,
-                           Vector2D& vel1,
-                           Scalar mass1,
-                           const Vector2D& pos2,
-                           Vector2D& vel2,
-                           Scalar mass2);
+inline void resolveElasticImpulse(const Vector2D& pos1,
+                                  Vector2D& vel1,
+                                  Scalar mass1,
+                                  const Vector2D& pos2,
+                                  Vector2D& vel2,
+                                  Scalar mass2) {
+    assert(mass1 > 0 && mass2 > 0);
+    // Unit normal from body 1 to body 2.
+    const auto delta = pos2 - pos1;
+    const auto sqr_dist = delta.x * delta.x + delta.y * delta.y;
+    if (sqr_dist < kEps) {
+        assert(false && "Coincident positions: contact normal undefined");
+        return;
+    }
+    const auto n = delta * (1.0 / std::sqrt(sqr_dist));
+
+    // Relative normal velocity. Negative means approaching.
+    const auto rel_vel = vel2 - vel1;
+    const auto vn = rel_vel.dot(n);
+
+    // Separating or tangent: no impulse needed.
+    if (vn >= 0.0) {
+        return;
+    }
+
+    // Inverse masses: lighter body receives larger velocity change.
+    const auto inv_m1 = 1.0 / mass1;
+    const auto inv_m2 = 1.0 / mass2;
+
+    // Perfectly elastic impulse magnitude, e = 1.
+    const auto j = -2.0 * vn / (inv_m1 + inv_m2);
+
+    // Equal and opposite impulses along the contact normal.
+    const auto impulse = n * j;
+    vel1 -= impulse * inv_m1;
+    vel2 += impulse * inv_m2;
+}
+
 }  // namespace collision
 
 }  // namespace math
