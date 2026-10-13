@@ -1,6 +1,7 @@
 #include "game_controller.h"
 
 #include <boost/asio/post.hpp>
+#include <stdexcept>
 #include <string_view>
 
 #include "logger.h"
@@ -8,6 +9,10 @@
 namespace client {
 
 std::shared_ptr<GameController> GameController::create(TcpClientPtr tcp, boost::asio::io_context& io) {
+    if (!tcp) {
+        throw std::invalid_argument("GameController::create: tcp must not be null");
+    }
+
     struct MakeSharedEnabler final : GameController {
         MakeSharedEnabler(TcpClientPtr t, boost::asio::io_context& i) : GameController(std::move(t), i) {}
     };
@@ -44,9 +49,9 @@ ClientState GameController::state() const noexcept {
 void GameController::wireCallbacks() {
     auto weak = weak_from_this();
 
-    tcp_->setMessageCallback([weak](const std::vector<std::uint8_t>& payload) {
+    tcp_->setMessageCallback([weak](std::vector<std::uint8_t> payload) {
         if (auto self = weak.lock())
-            boost::asio::post(self->strand_, [self, payload] {
+            boost::asio::post(self->strand_, [self, payload = std::move(payload)] {
                 self->onMessageOnStrand(payload);
             });
     });
@@ -122,6 +127,9 @@ void GameController::onMessageOnStrand(const std::vector<std::uint8_t>& payload)
         setState(ClientState::InGame);
     } else if (msg.starts_with("REJECT")) {
         LOG_WARN("JOIN rejected by server");
+        // mvp REJECT = disconnect, so TcpClient & GameController
+        // states synchronized (both Disconnected)
+        tcp_->disconnect();
         setState(ClientState::Disconnected);
     } else {
         LOG_WARN("Unknown server message ({} bytes): '{}'", payload.size(), msg);
