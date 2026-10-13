@@ -29,6 +29,10 @@ Vector2D& Vector2D::operator*=(Scalar s) {
     return std::sqrt(lengthSquared());
 }
 
+[[nodiscard]] Scalar Vector2D::dot(const Vector2D& other) const noexcept {
+    return x * other.x + y * other.y;
+}
+
 [[nodiscard]] Vector2D Vector2D::normalized() const {
     const Scalar len = length();
     if (len == 0) {
