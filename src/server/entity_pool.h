@@ -27,15 +27,13 @@ public:
     /**
      * @brief Obtain a reset Entity slot, reusing a freed slot when possible.
      * @return Non-null pointer to a zero-initialized Entity with a fresh id.
-     * @post Returned entity has isDestroyed == false and no optional components set.
-     * @post type == EntityType::None until the caller assigns it.
      * @note The returned pointer stays valid across subsequent acquire() calls
      */
     Entity* acquire() {
         if (!free_indices_.empty()) {
             const auto idx = free_indices_.back();
             free_indices_.pop_back();
-            storage_[idx] = Entity{};  // reset
+            storage_[idx] = Entity{};
             storage_[idx].id = next_id_++;
             return &storage_[idx];
         }
