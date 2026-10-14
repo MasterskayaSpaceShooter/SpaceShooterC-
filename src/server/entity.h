@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <optional>
-#include <vector>
+#include <string>
 
 #include "math_utils.h"
 
@@ -17,19 +17,25 @@ struct TransformComponent {
 };
 
 struct ShipComponent {
+    std::string name{};
+    std::uint32_t score{0};
     math::Scalar thrust_power{0.0};
     math::Scalar drag{0.0};
     bool is_thrusting{false};
 };
 
 struct HealthComponent {
-    int current{100};
-    int max{100};
+    std::uint16_t current{100};
+    std::uint16_t max{100};
 };
 
 struct CombatComponent {
-    int damage{0};
-    uint64_t owner_id{0};
+    std::uint16_t damage{0};
+    std::uint64_t owner_id{0};
+};
+
+struct AsteroidComponent {
+    std::uint16_t score_reward{0};
 };
 
 enum class EntityType { None, Ship, Asteroid, Bullet };
@@ -44,8 +50,9 @@ enum class EntityType { None, Ship, Asteroid, Bullet };
  * vectors (e.g. EnTT) once profiling shows this is hot.
  */
 struct Entity {
-    uint64_t id{0};
+    std::uint64_t id{0};
     EntityType type{EntityType::None};
+    math::Scalar mass{0.0};
     math::Scalar radius{0.0};
     bool isDestroyed{false};
 
@@ -53,6 +60,7 @@ struct Entity {
     std::optional<ShipComponent> ship;
     std::optional<HealthComponent> health;
     std::optional<CombatComponent> combat;
+    std::optional<AsteroidComponent> asteroid;
 };
 
 }  // namespace domain
