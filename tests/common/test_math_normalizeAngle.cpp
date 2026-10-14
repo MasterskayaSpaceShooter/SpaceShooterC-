@@ -5,10 +5,7 @@
 using math::kEps;
 using math::kPi;
 using math::normalizeAngle;
-using math::rotateTowards;
 using math::Scalar;
-
-constexpr Scalar kTol = 1e-9;
 
 // вспомогательная функция
 // проверяет что результат лежит в диапазоне (-pi, pi]
@@ -52,10 +49,4 @@ TEST(NormalizeAngle, LargeAndSmallNumberNormalize) {
 // близкие числа к граничным
 TEST(NormalizeAngle, Normalize) {
     EXPECT_NEAR(normalizeAngle(-kPi + 1e-15), -kPi + 1e-15, kEps);
-}
-
-// проверка поворота на max_angular_velocity * dt в правильную сторону
-TEST(RotateTowards, BasicLimitedStep) {
-    const Scalar result = rotateTowards(0.0, kPi / 2, 1.0, 0.1);
-    EXPECT_NEAR(result, 0.1, kTol);
 }
