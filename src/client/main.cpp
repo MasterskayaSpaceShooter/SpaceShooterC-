@@ -3,6 +3,9 @@
 
 #include "logger.h"
 #include "tcp_client.h"
+#include "null_input_provider.h"
+#include "null_renderer.h"
+#include "client_world.h"
 
 int main() {
     try {
