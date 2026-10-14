@@ -1,4 +1,6 @@
 #pragma once
+
+#include <cstdint>
 #include <string>
 
 #include "math_utils.h"
@@ -16,7 +18,7 @@ class EntitySnapshot {
     math::Vector2D velocity_;
     float radius_;
     float rotation_angle_;
-    u_int32_t score_;
+    std::uint32_t score_;
     std::string name_;
 };
 
