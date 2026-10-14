@@ -7,7 +7,7 @@ add_executable(tcp_client_tests
 )
 
 target_link_libraries(tcp_client_tests PRIVATE
-    tcp_client
+    client
     GTest::GTest
     GTest::Main
 )
