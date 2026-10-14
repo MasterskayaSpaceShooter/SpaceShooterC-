@@ -16,7 +16,7 @@ public:
      * @param my_player_id Входные данные: EntityId локального игрока.
      * @note Заглушка — пока ничего не делает.
      */
-    void updateSnapshot(const GameSnapshot& snapshot, snapshot::EntityId my_player_id);
+    void updateSnapshot(const snapshot::GameSnapshot& snapshot, snapshot::EntityId my_player_id);
 
     /**
      * @brief Жив ли корабль локального игрока.

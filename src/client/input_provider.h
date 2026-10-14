@@ -13,5 +13,7 @@ public:
 
     /// Опрос текущего состояния ввода (клавиатура, мышь).
     virtual void pollInput() = 0;
+    // TODO: Методы получения состояния (isKeyPressed, isMouseButtonPressed, ...)
+    //       будут добавлены, когда появится реальный ввод.
 };
 }  // namespace client
