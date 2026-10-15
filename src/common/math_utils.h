@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace math {
 
@@ -110,13 +111,17 @@ namespace collision {
 /// True if two circles overlap or touch.
 /// Criterion: (p1 - p2).lengthSquared() <= (r1 + r2)^2 —
 /// inclusive of exact tangency.
-/// \pre radius1 >= 0, radius2 >= 0
+/// \throws std::invalid_argument if either radius is not non-negative
 [[nodiscard]] inline bool checkCircleCollision(const Vector2D& pos1,
                                                Scalar radius1,
                                                const Vector2D& pos2,
-                                               Scalar radius2) noexcept {
-    assert(radius1 >= 0.0 && "Radius1 can't be negative!");
-    assert(radius2 >= 0.0 && "Radius2 can't be negative!");
+                                               Scalar radius2) {
+    if (!(radius1 >= 0.0)) {
+        throw std::invalid_argument("Radius1 must be non-negative.");
+    }
+    if (!(radius2 >= 0.0)) {
+        throw std::invalid_argument("Radius2 must be non-negative.");
+    }
     const auto delta = pos1 - pos2;
     const auto radius_sum = radius1 + radius2;
     return delta.lengthSquared() <= radius_sum * radius_sum;
