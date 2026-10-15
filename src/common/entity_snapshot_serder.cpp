@@ -113,9 +113,13 @@ std::optional<snapshot::EntitySnapshot> DeserializeEntity(std::span<const std::u
     dto.is_destroyed = fb->is_destroyed();
 
     if (const auto* t = fb->transform()) {
-        dto.transform = snapshot::TransformSnapshot{{t->position()->x(), t->position()->y()},  // <-- pointer!
-                                                    {t->velocity()->x(), t->velocity()->y()},  // <-- pointer!
-                                                    t->angle()};
+        const auto* pos = t->position();
+        const auto* vel = t->velocity();
+        if (!pos || !vel) {
+            // Malformed: Transform table present but required structs missing.
+            return std::nullopt;
+        }
+        dto.transform = snapshot::TransformSnapshot{{pos->x(), pos->y()}, {vel->x(), vel->y()}, t->angle()};
     }
     if (const auto* s = fb->ship()) {
         dto.ship = snapshot::ShipSnapshot{s->name() ? s->name()->str() : std::string{},
