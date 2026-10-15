@@ -1,6 +1,7 @@
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
 
+
 class NetworkProjectRecipe(ConanFile):
     name = "network_project"
     version = "1.0"
@@ -8,10 +9,8 @@ class NetworkProjectRecipe(ConanFile):
 
     def requirements(self):
         self.requires("boost/1.86.0")
-        # GTest — обычная (host) зависимость: тесты линкуются с её библиотеками.
-        # Если объявить её tool_requires, Conan поместит пакет в build-контекст
-        # и CMakeDeps не заполнит include/lib информацию (пустые gtest_INCLUDE_DIRS).
         self.requires("gtest/1.15.0")
+        self.requires("flatbuffers/25.12.19")
 
     def build_requirements(self):
         # Только инструменты сборки: автономный Ninja
@@ -44,8 +43,6 @@ class NetworkProjectRecipe(ConanFile):
         # иначе CMakeDeps генерирует таргеты GTest::* без include/библиотек
         deps = CMakeDeps(self)
         deps.generate()
-
-
 
     def build(self):
         cmake = CMake(self)

@@ -3,6 +3,7 @@ add_executable(unit_tests_common
         test_math_elastic_impulse.cpp
         test_vector2d.cpp
         test_math_normalizeAngle.cpp
+        test_entity_snapshot_serder.cpp
 )
 
 # Линкуем тестируемую статическую библиотеку common и таргет gtest из Конана

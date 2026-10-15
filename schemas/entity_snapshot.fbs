@@ -1,0 +1,53 @@
+namespace snapshot_wire;
+
+//refer to common/entity_snapshot.h
+
+enum EntityType : byte { None, Ship, Asteroid, Bullet }
+
+struct Vec2 { x: double; y: double; }
+
+table Transform {
+  position: Vec2;
+  velocity: Vec2;
+  angle:    double;
+}
+
+table Ship {
+  name:         string;
+  score:        uint;      // uint32
+  thrust_power: double;
+  drag:         double;
+  is_thrusting: bool;
+}
+
+table Health {
+  current: ushort;         // uint16
+  max:     ushort;
+}
+
+table Combat {
+  damage:   ushort;
+  owner_id: ulong;         // types::EntityId = uint64
+}
+
+table Asteroid {
+  score_reward: ushort;
+}
+
+table EntitySnapshot {
+  id:           ulong;     // types::EntityId = uint64
+  type:         EntityType;
+  mass:         double;
+  radius:       double;
+  is_destroyed: bool;
+
+  transform: Transform;
+  ship:      Ship;
+  health:    Health;
+  combat:    Combat;
+  asteroid:  Asteroid;
+}
+
+root_type EntitySnapshot;
+
+file_identifier "ESNP";
