@@ -103,4 +103,40 @@ TEST(UpdateShipPhysics, DragIsAppliedAfterThrust) {
     EXPECT_NEAR(position.y, 0.0, kEps);
 }
 
+TEST(UpdateShipPhysics, DragTimesDtEqualsOneStopsShip) {
+    Vector2D position{0.0, 0.0};
+    Vector2D velocity{10.0, 5.0};
+
+    updateShipPhysics(position, velocity, 0.0, false, 0.0, 0.5, 2.0);
+
+    EXPECT_NEAR(velocity.x, 0.0, kEps);
+    EXPECT_NEAR(velocity.y, 0.0, kEps);
+    EXPECT_NEAR(position.x, 0.0, kEps);
+    EXPECT_NEAR(position.y, 0.0, kEps);
+}
+
+TEST(UpdateShipPhysics, DragTimesDtAboveOneStopsShip) {
+    Vector2D position{0.0, 0.0};
+    Vector2D velocity{10.0, 5.0};
+
+    updateShipPhysics(position, velocity, 0.0, false, 0.0, 0.5, 3.0);
+
+    EXPECT_NEAR(velocity.x, 0.0, kEps);
+    EXPECT_NEAR(velocity.y, 0.0, kEps);
+    EXPECT_NEAR(position.x, 0.0, kEps);
+    EXPECT_NEAR(position.y, 0.0, kEps);
+}
+
+TEST(UpdateShipPhysics, ThrustThenStrongDragStopsShip) {
+    Vector2D position{0.0, 0.0};
+    Vector2D velocity{0.0, 0.0};
+
+    updateShipPhysics(position, velocity, 0.0, true, 100.0, 0.5, 3.0);
+
+    EXPECT_NEAR(velocity.x, 0.0, kEps);
+    EXPECT_NEAR(velocity.y, 0.0, kEps);
+    EXPECT_NEAR(position.x, 0.0, kEps);
+    EXPECT_NEAR(position.y, 0.0, kEps);
+}
+
 }  // namespace
