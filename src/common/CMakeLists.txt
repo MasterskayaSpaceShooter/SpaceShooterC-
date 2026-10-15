@@ -26,3 +26,16 @@ target_link_libraries(common PUBLIC Boost::boost)
 if (WIN32)
     target_link_libraries(common PUBLIC ws2_32 mswsock)
 endif ()
+
+# FlatBuffers
+
+find_package(flatbuffers CONFIG REQUIRED)
+
+include(${PROJECT_SOURCE_DIR}/cmake/flatbuffers_codegen.cmake)
+
+add_flatbuffers_schema(entity_snapshot_fbs
+        "${PROJECT_SOURCE_DIR}/schemas/entity_snapshot.fbs")
+
+target_link_libraries(common
+        PRIVATE entity_snapshot_fbs
+)
