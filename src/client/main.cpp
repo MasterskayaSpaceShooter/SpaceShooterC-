@@ -1,7 +1,10 @@
 #include <boost/asio.hpp>
 #include <memory>
 
+#include "client_world.h"
 #include "logger.h"
+#include "null_input_provider.h"
+#include "null_renderer.h"
 #include "tcp_client.h"
 
 int main() {
