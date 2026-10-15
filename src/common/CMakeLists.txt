@@ -16,7 +16,8 @@ target_sources(common PRIVATE
         vector2d.cpp
         types.h
         entity_snapshot.h
-        types.h
+        entity_snapshot_serder.h
+        entity_snapshot_serder.cpp
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
