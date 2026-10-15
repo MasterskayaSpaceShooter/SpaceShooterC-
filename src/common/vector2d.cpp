@@ -21,7 +21,7 @@ Vector2D& Vector2D::operator*=(Scalar s) {
     return *this;
 }
 
-[[nodiscard]] Scalar Vector2D::lengthSquared() const {
+[[nodiscard]] Scalar Vector2D::lengthSquared() const noexcept {
     return x * x + y * y;
 }
 
