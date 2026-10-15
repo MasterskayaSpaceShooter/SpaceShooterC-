@@ -8,7 +8,7 @@ namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
-constexpr double kEps = 1e-12;
+constexpr Scalar kEps = 1e-12;
 
 struct Vector2D {
     Scalar x = 0;
@@ -69,7 +69,21 @@ struct Vector2D {
 /// clamping to `target_angle` on the final tick (no overshoot).
 /// \pre max_angular_velocity >= 0, dt >= 0
 /// \return new heading in (-pi, pi]
-[[nodiscard]] Scalar rotateTowards(Scalar current_angle, Scalar target_angle, Scalar max_angular_velocity, Scalar dt);
+[[nodiscard]] inline Scalar rotateTowards(Scalar current_angle,
+                                          Scalar target_angle,
+                                          Scalar max_angular_velocity,
+                                          Scalar dt) {
+    const Scalar max_step = max_angular_velocity * dt;
+    const Scalar cur = normalizeAngle(current_angle);
+    const Scalar tgt = normalizeAngle(target_angle);
+    const Scalar delta = normalizeAngle(tgt - cur);
+
+    if (std::fabs(delta) <= max_step + kEps) {
+        return tgt;
+    }
+
+    return normalizeAngle(cur + std::copysign(max_step, delta));
+}
 
 /// Advances ship `position` and `velocity` by one tick using
 /// inertial integration with linear drag:
