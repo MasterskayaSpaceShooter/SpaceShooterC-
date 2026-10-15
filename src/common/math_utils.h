@@ -102,6 +102,11 @@ inline void updateShipPhysics(Vector2D& position,
                               Scalar thrust_power,
                               Scalar drag,
                               Scalar dt) {
+    assert(thrust_power >= 0);
+    assert(drag >= 0 && drag <= 1);
+    assert(dt >= 0);
+    assert(drag * dt <= 1);
+
     if (is_thrusting) {
         velocity.x += std::cos(angle) * thrust_power * dt;
         velocity.y += std::sin(angle) * thrust_power * dt;
