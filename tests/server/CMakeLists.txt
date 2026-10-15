@@ -3,15 +3,11 @@ add_executable(unit_tests_server
         test_network_response_router.cpp
         test_thread_safe_queue.cpp
 	test_tcp_server.cpp
-        ${CMAKE_SOURCE_DIR}/src/server/network_response_router.cpp
-	${CMAKE_SOURCE_DIR}/src/server/tcp_server.cpp
-        ${CMAKE_SOURCE_DIR}/src/server/session.cpp
-        ${CMAKE_SOURCE_DIR}/src/server/session_registry.cpp
+	test_world_instance.cpp
 )
 
-target_include_directories(unit_tests_server PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
-
 target_link_libraries(unit_tests_server PRIVATE
+        server
         common
         GTest::gmock
         GTest::gtest_main
