@@ -14,6 +14,7 @@ target_sources(common PRIVATE
         frame_codec.h
         math_utils.h
         vector2d.cpp
+        types.h
         entity_snapshot.h
 )
 
