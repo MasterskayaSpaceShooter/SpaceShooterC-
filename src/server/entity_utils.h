@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cmath>
+#include <optional>
+#include <type_traits>
 
 #include "entity.h"
 
@@ -9,21 +11,20 @@ namespace domain {
 /**
  * @brief Integrate motion for all live entities and resolve world bounds.
  *
- * @tparam EntityContainer Any range whose value_type is Entity
- *         (std::vector<Entity>, std::deque<Entity>, ...).
+ * @tparam EntityContainer Range of Entity or std::optional<Entity>.
+ *         Works with EntityPool::storage() directly.
  *
- * @param entities     Container of entities. Destroyed entities and entities
- *                     without a TransformComponent are skipped.
+ * @param entities     Container of entities. Empty optionals, destroyed
+ *                     entities, and entities without a transform are skipped.
  * @param dt           Frame duration.
  *
  * @pre dt >= 0, world_width > 0, world_height > 0.
  *
- * @post Every non-destroyed entity with a transform has its position clamped
- *       into the world rectangle.
- * @post Bullets and asteroids whose integration step left the world are marked
- *       isDestroyed = true; ships are clamped instead.
- * @post Ships that hit a wall keep their tangential velocity (sliding); only
- *       the velocity component normal to the wall is zeroed.
+ * @post Bullets that leave the world are marked isDestroyed = true.
+ * @post Ships are clamped to the world rectangle; wall hits zero only the
+ *       velocity component normal to the wall (sliding).
+ * @post Asteroids wrap around the world edges once their full radius has
+ *       left the world rectangle.
  *
  * @note Uses discrete integration; fast bullets can tunnel through small
  *       targets.
@@ -35,13 +36,29 @@ inline void updateMovementAndBounds(EntityContainer& entities,
                                     math::Scalar dt,
                                     math::Scalar world_width,
                                     math::Scalar world_height) {
-    for (auto& entity : entities) {
+    using ValueType = typename EntityContainer::value_type;
+
+    for (auto& slot : entities) {
+        // Unwrap std::optional<Entity> slots (EntityPool::storage()).
+        Entity* entity_ptr = nullptr;
+        if constexpr (std::is_same_v<ValueType, std::optional<Entity>>) {
+            if (!slot.has_value()) {
+                continue;
+            }
+            entity_ptr = &*slot;
+        } else {
+            entity_ptr = &slot;
+        }
+
+        Entity& entity = *entity_ptr;
+
         if (entity.type == EntityType::None || entity.isDestroyed || !entity.transform.has_value()) {
             continue;
         }
 
         auto& t = *entity.transform;
 
+        // Integrate.
         if (entity.type == EntityType::Ship && entity.ship.has_value()) {
             auto& s = *entity.ship;
             math::updateShipPhysics(t.position, t.velocity, t.angle, s.is_thrusting, s.thrust_power, s.drag, dt);
@@ -49,15 +66,39 @@ inline void updateMovementAndBounds(EntityContainer& entities,
             t.position += t.velocity * dt;
         }
 
+        // Asteroids wrap once fully outside the world.
+        if (entity.type == EntityType::Asteroid) {
+            const math::Scalar r = entity.radius;
+
+            if (t.position.x + r < 0.0) {
+                t.position.x = world_width + r;
+            } else if (t.position.x - r > world_width) {
+                t.position.x = -r;
+            }
+
+            if (t.position.y + r < 0.0) {
+                t.position.y = world_height + r;
+            } else if (t.position.y - r > world_height) {
+                t.position.y = -r;
+            }
+
+            continue;
+        }
+
+        // Clamp for everything else.
         const math::Vector2D clamped = math::clampToWorldBounds(t.position, world_width, world_height);
 
-        if (clamped == t.position) {
+        // Epsilon-safe comparison: did clamping actually move us on each axis?
+        const bool clamped_x = std::abs(clamped.x - t.position.x) > math::kEps;
+        const bool clamped_y = std::abs(clamped.y - t.position.y) > math::kEps;
+
+        if (!clamped_x && !clamped_y) {
             continue;
         }
 
         switch (entity.type) {
             case EntityType::None:
-                // unreachable, but safety-net
+                // Safety net; unreachable.
                 break;
 
             case EntityType::Bullet:
@@ -65,17 +106,17 @@ inline void updateMovementAndBounds(EntityContainer& entities,
                 break;
 
             case EntityType::Ship:
-                if (std::abs(clamped.x - t.position.x) > math::kEps) {
+                if (clamped_x) {
                     t.velocity.x = 0.0;
                 }
-                if (std::abs(clamped.y - t.position.y) > math::kEps) {
+                if (clamped_y) {
                     t.velocity.y = 0.0;
                 }
                 t.position = clamped;
                 break;
 
             case EntityType::Asteroid:
-                entity.isDestroyed = true;
+                // Unreachable: asteroids are handled (wrapped) above.
                 break;
         }
     }

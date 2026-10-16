@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <vector>
 
 #include "entity.h"
@@ -12,62 +13,68 @@ namespace domain {
 /**
  * @brief Fixed-slot pool for Entity objects, backed by std::deque for stable addresses.
  *
- * @invariant storage_.size() == high-water mark of simultaneously live entities.
- * @invariant Indices in free_indices_ are unique and refer to slots whose
- *            isDestroyed flag has been cleared by recycleDestroyed().
+ * @invariant storage_.size() is the high-water mark of simultaneously engaged slots.
+ * @invariant free_indices_ and disengaged slots form a bijection:
+ *            idx is in free_indices_ iff storage_[idx] == std::nullopt.
+ * @invariant A slot is engaged iff storage_[idx].has_value().
+ *            An engaged slot may still have isDestroyed == true until
+ *            recycleDestroyed() runs.
+ * @note Entity must value-initialize to isDestroyed == false; acquire()
+ *       relies on this via std::optional::emplace().
  * @note Thread-unsafe. Call from the simulation thread only.
- *
- * @invariant A slot is "free" if it is in free_indices_, and while free
- *            it holds isDestroyed == true and type == None.
- *            acquire() resets the slot with `storage_[idx] = Entity{},
- *            which is the only place isDestroyed is cleared.
  */
 class EntityPool {
 public:
     /**
-     * @brief Obtain a reset Entity slot, reusing a freed slot when possible.
-     * @return Non-null pointer to a zero-initialized Entity with a fresh id.
-     * @note The returned pointer stays valid across subsequent acquire() calls
+     * @brief Obtain a fresh Entity slot, reusing a freed slot when possible.
+     * @return Non-null pointer to a value-initialized Entity with a fresh id.
+     * @note The pointer remains valid until recycleDestroyed() recycles this
+     *       slot (see class-level @note on Entity value-initialization).
      */
     Entity* acquire() {
         if (!free_indices_.empty()) {
             const auto idx = free_indices_.back();
             free_indices_.pop_back();
-            storage_[idx] = Entity{};
-            storage_[idx].id = next_id_++;
-            return &storage_[idx];
+            storage_[idx].emplace();
+            storage_[idx]->id = next_id_++;
+            return &*storage_[idx];
         }
+
         storage_.emplace_back();
-        storage_.back().id = next_id_++;
-        return &storage_.back();
+        storage_.back().emplace();
+        storage_.back()->id = next_id_++;
+        return &*storage_.back();
     }
 
     /**
-     * @brief Reclaim every slot currently flagged isDestroyed.
+     * @brief Reclaim every live slot currently flagged isDestroyed.
      * @pre Called once per frame after all systems have finished writing flags.
-     * @post All previously destroyed slots are marked live (isDestroyed == false)
-     *       and queued for reuse by acquire(). Idempotent: calling twice without
-     *       any destruction in between is a no-op.
-     * @warning Any raw pointer/index to a recycled slot held by other systems
-     *          becomes stale after this call.
+     * @post All previously destroyed slots are disengaged (std::nullopt) and
+     *       queued for reuse by acquire().
+     * @post Idempotent: calling twice without any destruction in between is a no-op.
+     * @warning Recycling a slot destroys its contained Entity. Any Entity*
+     *          previously returned by acquire() for that slot becomes dangling.
+     *          Any index to a recycled slot now refers to a disengaged slot
+     *          that a later acquire() may reuse for a different entity.
      */
     void recycleDestroyed() {
         for (std::size_t i = 0; i < storage_.size(); ++i) {
-            Entity& e = storage_[i];
-            if (e.isDestroyed && e.type != EntityType::None) {
+            auto& slot = storage_[i];
+            if (slot && slot->isDestroyed) {
                 free_indices_.push_back(i);
-                e.type = EntityType::None;
+                slot.reset();
             }
         }
     }
 
-    /// Direct access to storage for iteration. Must skip isDestroyed entities.
-    std::deque<Entity>& storage() {
+    /// Direct access to storage for iteration.
+    /// Callers must skip empty slots and slots whose entity is flagged isDestroyed.
+    std::deque<std::optional<Entity>>& storage() {
         return storage_;
     }
 
 private:
-    std::deque<Entity> storage_;
+    std::deque<std::optional<Entity>> storage_;
     std::vector<std::size_t> free_indices_;
     uint64_t next_id_{1};
 };
