@@ -1,17 +1,13 @@
 add_executable(unit_tests_common
         test_frame_codec.cpp
         test_math_elastic_impulse.cpp
-        test_vector2d.cpp
         test_math_normalizeAngle.cpp
+        test_vector2d.cpp
+        test_math_clamp_to_world_bounds.cpp
         test_circle_collision.cpp
 )
 
-# Линкуем тестируемую статическую библиотеку common и таргет gtest из Конана
-target_link_libraries(unit_tests_common PRIVATE
-        common
-        GTest::gtest_main
-)
+target_link_libraries(unit_tests_common PRIVATE common GTest::gtest_main)
 
-# Интегрируем исполняемый файл в систему CTest для автоматического обнаружения тестов
 include(GoogleTest)
 gtest_discover_tests(unit_tests_common)

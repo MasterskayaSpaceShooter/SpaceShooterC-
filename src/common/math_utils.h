@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <numbers>
@@ -9,7 +10,9 @@ namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
-constexpr Scalar kEps = 1e-12;
+constexpr double kEps = 1e-12;
+constexpr Scalar kWorldHeight = 2000.0;
+constexpr Scalar kWorldWidth = 2000.0;
 
 struct Vector2D {
     Scalar x = 0;
@@ -103,8 +106,27 @@ void updateShipPhysics(Vector2D& position,
 /// Clamps `position` into the world rectangle centered at the origin:
 /// x in [-world_width/2, +world_width/2], y in [-world_height/2, +world_height/2].
 /// Per-axis clamp (inclusive bounds); corners are not treated radially.
+/// Границы клампа отодвинуты на kEps внутрь от краёв мира, поэтому результат
+/// всегда остаётся строго внутри мира. Прижимания к границе нет: координата
+/// меняется только после реального выхода за дозволенный диапазон, без
+/// «мёртвой зоны» вблизи края и обратного притягивания.
 /// \pre world_width > 0, world_height > 0
-[[nodiscard]] Vector2D clampToWorldBounds(const Vector2D& position, Scalar world_width, Scalar world_height);
+[[nodiscard]] inline Vector2D clampToWorldBounds(const Vector2D& position,
+                                                 Scalar world_width = kWorldWidth,
+                                                 Scalar world_height = kWorldHeight) noexcept {
+    const Scalar half_w = world_width * static_cast<Scalar>(0.5) - kEps;
+    const Scalar half_h = world_height * static_cast<Scalar>(0.5) - kEps;
+
+    return Vector2D{
+        std::clamp(position.x, -half_w, half_w),
+        std::clamp(position.y, -half_h, half_h),
+    };
+}
+
+// Запрет неявных преобразований: аргументы world_width и world_height
+// принимаются строго как double (Scalar); int/float и т.п. — ошибка компиляции.
+template <typename T1, typename T2>
+Vector2D clampToWorldBounds(const Vector2D&, T1, T2) = delete;
 
 namespace collision {
 
