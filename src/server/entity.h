@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -17,7 +18,8 @@ struct TransformComponent {
 };
 
 struct ShipComponent {
-    std::string name{};
+    std::uint64_t id{0};
+    std::array<char, 32> name{};
     std::uint32_t score{0};
     math::Scalar thrust_power{0.0};
     math::Scalar drag{0.0};
