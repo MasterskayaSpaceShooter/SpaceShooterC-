@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace math {
 
@@ -48,7 +49,7 @@ struct Vector2D {
         return std::fabs(x - other.x) < kEps && std::fabs(y - other.y) < kEps;
     }
 
-    [[nodiscard]] Scalar lengthSquared() const;
+    [[nodiscard]] Scalar lengthSquared() const noexcept;
     [[nodiscard]] Scalar length() const;
     [[nodiscard]] Scalar dot(const Vector2D& other) const noexcept;
     /// Единичный вектор того же направления.
@@ -105,38 +106,21 @@ void updateShipPhysics(Vector2D& position,
 /// Clamps `position` into the world rectangle centered at the origin:
 /// x in [-world_width/2, +world_width/2], y in [-world_height/2, +world_height/2].
 /// Per-axis clamp (inclusive bounds); corners are not treated radially.
-/// Значения в пределах kEps от границы (изнутри или снаружи) прижимаются
-/// точно к границе, чтобы подавить микродрожание от погрешностей float.
+/// Границы клампа отодвинуты на kEps внутрь от краёв мира, поэтому результат
+/// всегда остаётся строго внутри мира. Прижимания к границе нет: координата
+/// меняется только после реального выхода за дозволенный диапазон, без
+/// «мёртвой зоны» вблизи края и обратного притягивания.
 /// \pre world_width > 0, world_height > 0
 [[nodiscard]] inline Vector2D clampToWorldBounds(const Vector2D& position,
                                                  Scalar world_width = kWorldWidth,
                                                  Scalar world_height = kWorldHeight) noexcept {
-    const Scalar half_w = world_width * 0.5;
-    const Scalar half_h = world_height * 0.5;
-    const Scalar lo_w = -half_w;
-    const Scalar hi_w = half_w;
-    const Scalar lo_h = -half_h;
-    const Scalar hi_h = half_h;
+    const Scalar half_w = world_width * static_cast<Scalar>(0.5) - kEps;
+    const Scalar half_h = world_height * static_cast<Scalar>(0.5) - kEps;
 
-    // Точки в пределах kEps от границы (изнутри или снаружи) прижимаем к
-    // границе заранее, а std::clamp страхует результат от любых выбросов.
-    Scalar x = position.x;
-    if (x <= lo_w + kEps) {
-        x = lo_w;
-    } else if (x >= hi_w - kEps) {
-        x = hi_w;
-    }
-    x = std::clamp(x, lo_w, hi_w);
-
-    Scalar y = position.y;
-    if (y <= lo_h + kEps) {
-        y = lo_h;
-    } else if (y >= hi_h - kEps) {
-        y = hi_h;
-    }
-    y = std::clamp(y, lo_h, hi_h);
-
-    return Vector2D{x, y};
+    return Vector2D{
+        std::clamp(position.x, -half_w, half_w),
+        std::clamp(position.y, -half_h, half_h),
+    };
 }
 
 // Запрет неявных преобразований: аргументы world_width и world_height
@@ -149,8 +133,21 @@ namespace collision {
 /// True if two circles overlap or touch.
 /// Criterion: (p1 - p2).lengthSquared() <= (r1 + r2)^2 —
 /// inclusive of exact tangency.
-/// \pre radius1 >= 0, radius2 >= 0
-[[nodiscard]] bool checkCircleCollision(const Vector2D& pos1, Scalar radius1, const Vector2D& pos2, Scalar radius2);
+/// \throws std::invalid_argument if either radius is not non-negative
+[[nodiscard]] inline bool checkCircleCollision(const Vector2D& pos1,
+                                               Scalar radius1,
+                                               const Vector2D& pos2,
+                                               Scalar radius2) {
+    if (!(radius1 >= 0.0)) {
+        throw std::invalid_argument("Radius1 must be non-negative.");
+    }
+    if (!(radius2 >= 0.0)) {
+        throw std::invalid_argument("Radius2 must be non-negative.");
+    }
+    const auto delta = pos1 - pos2;
+    const auto radius_sum = radius1 + radius2;
+    return delta.lengthSquared() <= radius_sum * radius_sum;
+}
 
 /// Perfectly elastic linear impulse between two point masses at contact.
 /// Positions are read-only (caller guarantees no overlap / uses CCD).

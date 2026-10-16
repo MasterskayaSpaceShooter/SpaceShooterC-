@@ -4,6 +4,7 @@ add_executable(unit_tests_common
         test_math_normalizeAngle.cpp
         test_vector2d.cpp
         test_math_clamp_to_world_bounds.cpp
+        test_circle_collision.cpp
 )
 
 target_link_libraries(unit_tests_common PRIVATE common GTest::gtest_main)
