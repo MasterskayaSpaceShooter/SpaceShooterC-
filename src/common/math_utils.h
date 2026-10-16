@@ -91,8 +91,9 @@ inline void updateShipPhysics(Vector2D& position,
                               bool is_thrusting,
                               Scalar thrust_power,
                               Scalar drag,
-                              Scalar dt) {
-    if (thrust_power < 0.0 || drag < 0.0 || drag > 1.0 || dt < 0.0) {
+                              Scalar dt,
+                              Scalar max_speed = 600.0) {
+    if (thrust_power < 0.0 || max_speed < 0.0 || drag < 0.0 || dt < 0.0) {
         LOG_ERROR("updateShipPhysics: недопустимые параметры: thrust_power={}, drag={}, dt={}", thrust_power, drag, dt);
     }
 
@@ -104,6 +105,17 @@ inline void updateShipPhysics(Vector2D& position,
     const Scalar drag_factor = std::clamp(1.0 - drag * dt, 0.0, 1.0);
 
     velocity *= drag_factor;
+
+    const Scalar speed_sqr = velocity.lengthSquared();
+    if (speed_sqr > max_speed * max_speed) {
+        velocity *= max_speed / std::sqrt(speed_sqr);
+    }
+
+    constexpr Scalar kStopThresholdSqr = 0.01;  // 0.1 units/sec
+    if (velocity.lengthSquared() < kStopThresholdSqr) {
+        velocity = {};
+    }
+
     position += velocity * dt;
 }
 
