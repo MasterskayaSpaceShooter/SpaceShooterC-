@@ -2,7 +2,7 @@
 
 namespace client {
 
-void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& /*snapshot*/, snapshot::EntityId my_player_id) {
+void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& /*snapshot*/, types::EntityId my_player_id) {
     // Разобрать снимок и обновить entities_.
     my_player_id_ = my_player_id;
 }
