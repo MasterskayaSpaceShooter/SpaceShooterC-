@@ -21,6 +21,7 @@ struct ShipSnapshot {
     math::Scalar thrust_power;
     math::Scalar drag;
     bool is_thrusting;
+    std::uint16_t frags;
 };
 
 struct HealthSnapshot {

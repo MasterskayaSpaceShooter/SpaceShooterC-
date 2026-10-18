@@ -31,7 +31,11 @@ EntityType ToWire(types::EntityType t) noexcept {
 }
 
 types::EntityType FromWire(EntityType t) noexcept {
-    return static_cast<types::EntityType>(static_cast<std::uint8_t>(t));
+    const auto val = static_cast<std::uint8_t>(t);
+    if (val > kEnumBullet) {
+        return types::EntityType::None;
+    }
+    return static_cast<types::EntityType>(val);
 }
 
 }  // namespace
@@ -51,7 +55,7 @@ std::vector<std::uint8_t> SerializeEntity(const snapshot::EntitySnapshot& dto) {
     flatbuffers::Offset<Ship> ship_off = 0;
     if (dto.ship) {
         const auto& s = *dto.ship;
-        ship_off = CreateShip(fbb, fbb.CreateString(s.name), s.score, s.thrust_power, s.drag, s.is_thrusting);
+        ship_off = CreateShip(fbb, fbb.CreateString(s.name), s.score, s.thrust_power, s.drag, s.is_thrusting, s.frags);
     }
 
     flatbuffers::Offset<Health> health_off = 0;
@@ -81,6 +85,7 @@ std::vector<std::uint8_t> SerializeEntity(const snapshot::EntitySnapshot& dto) {
 
     FinishEntitySnapshotBuffer(fbb, root);
 
+    // TODO: zero-copy - return flatbuffers::DetachedBuffer
     const auto* p = fbb.GetBufferPointer();
     return {p, p + fbb.GetSize()};
 }
@@ -91,6 +96,8 @@ std::optional<snapshot::EntitySnapshot> DeserializeEntity(std::span<const std::u
 
     // 1) magic bytes fast-fail
     if (data.size() < kMinFlatBufferSize)
+        return std::nullopt;
+    if (!flatbuffers::BufferHasIdentifier(data.data(), EntitySnapshotIdentifier(), /*size_prefixed=*/false))
         return std::nullopt;
 
     // 2) structural verification (no identifier — already checked above)
@@ -126,7 +133,8 @@ std::optional<snapshot::EntitySnapshot> DeserializeEntity(std::span<const std::u
                                           s->score(),
                                           s->thrust_power(),
                                           s->drag(),
-                                          s->is_thrusting()};
+                                          s->is_thrusting(),
+                                          s->frags()};
     }
     if (const auto* h = fb->health())
         dto.health = snapshot::HealthSnapshot{h->current(), h->max()};

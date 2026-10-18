@@ -18,6 +18,7 @@ table Ship {
   thrust_power: double;
   drag:         double;
   is_thrusting: bool;
+  frags:uint16;
 }
 
 table Health {

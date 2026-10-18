@@ -105,7 +105,7 @@ EntitySnapshot MakeShipEntity() {
     auto e = MakeMinimalEntity();
     e.type = types::EntityType::Ship;
     e.transform = TransformSnapshot{{1.0f, 2.0f}, {0.5f, -0.5f}, 1.57f};
-    e.ship = ShipSnapshot{"Enterprise", 9999, 12.5f, 0.25f, true};
+    e.ship = ShipSnapshot{"Enterprise", 9999, 12.5f, 0.25f, true, 3};
     e.health = HealthSnapshot{75, 100};
     e.combat = CombatSnapshot{10, 55};
     return e;
@@ -156,13 +156,13 @@ TEST(EntitySnapshotSerderTest, RoundTripEntityWithOnlyHealth) {
 
 TEST(EntitySnapshotSerderTest, RoundTripEmptyShipName) {
     auto dto = MakeMinimalEntity();
-    dto.ship = ShipSnapshot{"", 0, 0.0f, 0.0f, false};
+    dto.ship = ShipSnapshot{"", 0, 0.0f, 0.0f, false, 3};
     AssertRoundTrip(dto);
 }
 
 TEST(EntitySnapshotSerderTest, RoundTripLongShipName) {
     auto dto = MakeMinimalEntity();
-    dto.ship = ShipSnapshot{std::string(kLongNameLength, 'x'), 1, 1.0f, 1.0f, true};
+    dto.ship = ShipSnapshot{std::string(kLongNameLength, 'x'), 1, 1.0f, 1.0f, true, 3};
     AssertRoundTrip(dto);
 }
 
