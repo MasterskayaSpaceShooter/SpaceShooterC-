@@ -103,7 +103,11 @@ void GameController::doStart(const std::string& host, std::uint16_t port, std::s
 
 void GameController::doShutdown() {
     LOG_INFO("Shutting down transport (state: {})", convertStateToString(state_.load()));
+
     tcp_->disconnect();
+    tcp_->setMessageCallback(nullptr);
+    tcp_->setDisconnectCallback(nullptr);
+
     setState(ClientState::Disconnected);
 }
 
@@ -129,8 +133,7 @@ void GameController::onMessageOnStrand(const std::vector<std::uint8_t>& payload)
         LOG_WARN("JOIN rejected by server");
         // mvp REJECT = disconnect, so TcpClient & GameController
         // states synchronized (both Disconnected)
-        tcp_->disconnect();
-        setState(ClientState::Disconnected);
+        doShutdown();
     } else {
         LOG_WARN("Unknown server message ({} bytes): '{}'", payload.size(), msg);
     }
