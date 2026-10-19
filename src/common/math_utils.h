@@ -6,6 +6,8 @@
 #include <numbers>
 #include <stdexcept>
 
+#include "logger.h"
+
 namespace math {
 
 using Scalar = double;
@@ -73,35 +75,49 @@ struct Vector2D {
 /// clamping to `target_angle` on the final tick (no overshoot).
 /// \pre max_angular_velocity >= 0, dt >= 0
 /// \return new heading in (-pi, pi]
-[[nodiscard]] inline Scalar rotateTowards(Scalar current_angle,
-                                          Scalar target_angle,
-                                          Scalar max_angular_velocity,
-                                          Scalar dt) {
-    const Scalar max_step = max_angular_velocity * dt;
-    const Scalar cur = normalizeAngle(current_angle);
-    const Scalar tgt = normalizeAngle(target_angle);
-    const Scalar delta = normalizeAngle(tgt - cur);
-
-    if (std::fabs(delta) <= max_step + kEps) {
-        return tgt;
-    }
-
-    return normalizeAngle(cur + std::copysign(max_step, delta));
-}
+[[nodiscard]] Scalar rotateTowards(Scalar current_angle, Scalar target_angle, Scalar max_angular_velocity, Scalar dt);
 
 /// Advances ship `position` and `velocity` by one tick using
 /// inertial integration with linear drag:
 ///   A = is_thrusting ? (cos angle, sin angle) * thrust_power : 0
-///   V = (V + A*dt) * (1 - drag*dt);  P = P + V*dt
-/// \pre thrust_power >= 0, drag in [0,1], dt >= 0, drag*dt <= 1
+///   V = (V + A*dt) * clamp(1 - drag*dt, 0, 1);  P = P + V*dt
+///
+/// If drag*dt > 1, drag fully stops the ship: `velocity` is zeroed
+/// \pre thrust_power >= 0, drag in [0,1], dt >= 0
 /// \pre `position` and `velocity` must not alias.
-void updateShipPhysics(Vector2D& position,
-                       Vector2D& velocity,
-                       Scalar angle,
-                       bool is_thrusting,
-                       Scalar thrust_power,
-                       Scalar drag,
-                       Scalar dt);
+inline void updateShipPhysics(Vector2D& position,
+                              Vector2D& velocity,
+                              Scalar angle,
+                              bool is_thrusting,
+                              Scalar thrust_power,
+                              Scalar drag,
+                              Scalar dt,
+                              Scalar max_speed = 600.0) {
+    if (thrust_power < 0.0 || max_speed < 0.0 || drag < 0.0 || dt < 0.0) {
+        LOG_ERROR("updateShipPhysics: недопустимые параметры: thrust_power={}, drag={}, dt={}", thrust_power, drag, dt);
+    }
+
+    if (is_thrusting) {
+        velocity.x += std::cos(angle) * thrust_power * dt;
+        velocity.y += std::sin(angle) * thrust_power * dt;
+    }
+
+    const Scalar drag_factor = std::clamp(1.0 - drag * dt, 0.0, 1.0);
+
+    velocity *= drag_factor;
+
+    const Scalar speed_sqr = velocity.lengthSquared();
+    if (speed_sqr > max_speed * max_speed) {
+        velocity *= max_speed / std::sqrt(speed_sqr);
+    }
+
+    constexpr Scalar kStopThresholdSqr = 0.01;  // 0.1 units/sec
+    if (velocity.lengthSquared() < kStopThresholdSqr) {
+        velocity = {};
+    }
+
+    position += velocity * dt;
+}
 
 /// Clamps `position` into the world rectangle centered at the origin:
 /// x in [-world_width/2, +world_width/2], y in [-world_height/2, +world_height/2].
