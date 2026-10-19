@@ -10,6 +10,8 @@ add_executable(server_app
         entity.h
         entity_pool.h
         entity_utils.h
+        asteroid_factory.h
+        asteroid_factory.cpp
 )
 
 target_link_libraries(server_app PRIVATE common)
