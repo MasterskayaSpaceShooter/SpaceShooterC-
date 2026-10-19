@@ -7,6 +7,8 @@ add_executable(server_app
     network_response_router.h
     network_context.h
     tcp_server.cpp
+    asteroid_factory.h
+    asteroid_factory.cpp
 )
 
 target_link_libraries(server_app PRIVATE common)
