@@ -72,7 +72,7 @@ struct Vector2D {
 
 /// Rotates `current_angle` toward `target_angle` by at most
 /// `max_angular_velocity * dt` rad, taking the shortest path and
-/// clamping to `target_angle` on the final tick (no overshoot).
+/// snaps to the normalized target when within kEps of it.
 /// \pre max_angular_velocity >= 0, dt >= 0
 /// \return new heading in (-pi, pi]
 [[nodiscard]] inline Scalar rotateTowards(Scalar current_angle,
