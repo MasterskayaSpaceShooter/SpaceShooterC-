@@ -2,7 +2,7 @@ namespace snapshot_wire;
 
 //refer to common/entity_snapshot.h
 
-enum EntityType : byte { None, Ship, Asteroid, Bullet }
+enum EntityType : ubyte { None, Ship, Asteroid, Bullet }
 
 struct Vec2 { x: double; y: double; }
 
