@@ -93,7 +93,7 @@ void AssertRoundTrip(const EntitySnapshot& dto) {
 
 EntitySnapshot MakeMinimalEntity() {
     EntitySnapshot e;
-    e.id = 1;
+    e.id = types::EntityId{1};
     e.type = types::EntityType::Ship;
     e.mass = 10.0f;
     e.radius = 1.5f;
@@ -107,13 +107,13 @@ EntitySnapshot MakeShipEntity() {
     e.transform = TransformSnapshot{{1.0f, 2.0f}, {0.5f, -0.5f}, 1.57f};
     e.ship = ShipSnapshot{"Enterprise", 9999, 12.5f, 0.25f, true, 3};
     e.health = HealthSnapshot{75, 100};
-    e.combat = CombatSnapshot{10, 55};
+    e.combat = CombatSnapshot{10, types::EntityId{55}};
     return e;
 }
 
 EntitySnapshot MakeAsteroidEntity() {
     auto e = MakeMinimalEntity();
-    e.id = 123;
+    e.id = types::EntityId{123};
     e.type = types::EntityType::Asteroid;
     e.mass = 42.5f;
     e.radius = 3.25f;

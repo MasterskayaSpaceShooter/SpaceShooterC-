@@ -64,7 +64,7 @@ std::vector<std::uint8_t> SerializeEntity(const snapshot::EntitySnapshot& dto) {
 
     flatbuffers::Offset<Combat> combat_off = 0;
     if (dto.combat)
-        combat_off = CreateCombat(fbb, dto.combat->damage, dto.combat->owner_id);
+        combat_off = CreateCombat(fbb, dto.combat->damage, dto.combat->owner_id.get());
 
     flatbuffers::Offset<Asteroid> asteroid_off = 0;
     if (dto.asteroid)
@@ -72,7 +72,7 @@ std::vector<std::uint8_t> SerializeEntity(const snapshot::EntitySnapshot& dto) {
 
     // --- root
     const auto root = CreateEntitySnapshot(fbb,
-                                           dto.id,
+                                           dto.id.get(),
                                            ToWire(dto.type),
                                            dto.mass,
                                            dto.radius,
@@ -113,7 +113,7 @@ std::optional<snapshot::EntitySnapshot> DeserializeEntity(std::span<const std::u
 
     // 4) copy into the DTO
     snapshot::EntitySnapshot dto;
-    dto.id = fb->id();
+    dto.id = types::EntityId{fb->id()};
     dto.type = FromWire(fb->type());
     dto.mass = fb->mass();
     dto.radius = fb->radius();
@@ -139,7 +139,7 @@ std::optional<snapshot::EntitySnapshot> DeserializeEntity(std::span<const std::u
     if (const auto* h = fb->health())
         dto.health = snapshot::HealthSnapshot{h->current(), h->max()};
     if (const auto* c = fb->combat())
-        dto.combat = snapshot::CombatSnapshot{c->damage(), c->owner_id()};
+        dto.combat = snapshot::CombatSnapshot{c->damage(), types::EntityId{c->owner_id()}};
     if (const auto* a = fb->asteroid())
         dto.asteroid = snapshot::AsteroidSnapshot{a->score_reward()};
 
