@@ -4,6 +4,7 @@
 
 #include "entity_snapshot.h"
 #include "game_snapshot.h"
+#include "types.h"
 
 namespace client {
 class ClientWorld {
@@ -16,7 +17,7 @@ public:
      * @param my_player_id Входные данные: EntityId локального игрока.
      * @note Заглушка — пока ничего не делает.
      */
-    void updateSnapshot(const snapshot::GameSnapshot& snapshot, snapshot::EntityId my_player_id);
+    void updateSnapshot(const snapshot::GameSnapshot& snapshot, types::EntityId my_player_id);
 
     /**
      * @brief Жив ли корабль локального игрока.
@@ -28,19 +29,19 @@ public:
     /**
      * @brief Возвращает карту всех известных сущностей мира.
      */
-    [[nodiscard]] const std::unordered_map<snapshot::EntityId, snapshot::EntitySnapshot>& getEntities() const noexcept {
+    [[nodiscard]] const std::unordered_map<types::EntityId, snapshot::EntitySnapshot>& getEntities() const noexcept {
         return entities_;
     }
 
     /**
      * @brief Возвращает EntityId локального игрока.
      */
-    [[nodiscard]] snapshot::EntityId myPlayerId() const noexcept {
+    [[nodiscard]] types::EntityId myPlayerId() const noexcept {
         return my_player_id_;
     }
 
 private:
-    snapshot::EntityId my_player_id_{0};
-    std::unordered_map<snapshot::EntityId, snapshot::EntitySnapshot> entities_;
+    types::EntityId my_player_id_{0};
+    std::unordered_map<types::EntityId, snapshot::EntitySnapshot> entities_;
 };
 }  // namespace client
