@@ -72,10 +72,24 @@ struct Vector2D {
 
 /// Rotates `current_angle` toward `target_angle` by at most
 /// `max_angular_velocity * dt` rad, taking the shortest path and
-/// clamping to `target_angle` on the final tick (no overshoot).
+/// snaps to the normalized target when within kEps of it.
 /// \pre max_angular_velocity >= 0, dt >= 0
 /// \return new heading in (-pi, pi]
-[[nodiscard]] Scalar rotateTowards(Scalar current_angle, Scalar target_angle, Scalar max_angular_velocity, Scalar dt);
+[[nodiscard]] inline Scalar rotateTowards(Scalar current_angle,
+                                          Scalar target_angle,
+                                          Scalar max_angular_velocity,
+                                          Scalar dt) {
+    const Scalar max_step = max_angular_velocity * dt;
+    const Scalar cur = normalizeAngle(current_angle);
+    const Scalar tgt = normalizeAngle(target_angle);
+    const Scalar delta = normalizeAngle(tgt - cur);
+
+    if (std::fabs(delta) <= max_step + kEps) {
+        return tgt;
+    }
+
+    return normalizeAngle(cur + std::copysign(max_step, delta));
+}
 
 /// Advances ship `position` and `velocity` by one tick using
 /// inertial integration with linear drag:
