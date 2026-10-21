@@ -22,7 +22,7 @@ TEST(GameSnapshotTest, RoundTripsAllEntityFields) {
         17.5F,
         -1.25F,
         987654U,
-        std::string{"player\0one", 10},
+        "playerone",
     };
     const EntitySnapshot asteroid{
         7,
@@ -75,6 +75,17 @@ TEST(GameSnapshotTest, EncodesHeaderInNetworkByteOrder) {
     EXPECT_EQ(bytes, (Bytes{0x12, 0x34, 0x56, 0x78, 0x00, 0x00, 0x00, 0x00}));
 }
 
+TEST(GameSnapshotTest, EncodesNamesAsFixed32ByteFields) {
+    GameSnapshot snapshot{{EntitySnapshot{1, EntityType::Ship, {}, {}, 1.0F, 0.0F, 0, "player"}}, 0U};
+
+    const auto bytes = snapshot.Serialize();
+
+    ASSERT_EQ(bytes.size(), 8U + 81U);
+    EXPECT_EQ(std::string(bytes.begin() + 57, bytes.begin() + 63), "player");
+    EXPECT_EQ(bytes[63], 0U);
+    EXPECT_EQ(bytes[88], 0U);
+}
+
 TEST(GameSnapshotTest, RoundTripsEmptySnapshot) {
     GameSnapshot original{{}, 19U};
 
@@ -100,6 +111,36 @@ TEST(GameSnapshotTest, RejectsTruncatedInput) {
 
 TEST(GameSnapshotTest, RejectsImpossibleEntityCount) {
     const Bytes bytes{0, 0, 0, 0, 0, 0, 0, 1};
+
+    EXPECT_THROW((void)GameSnapshot::Deserialize(bytes), std::invalid_argument);
+}
+
+TEST(GameSnapshotTest, RejectsNamesLongerThan32Bytes) {
+    EXPECT_THROW((void)(EntitySnapshot{1, EntityType::Ship, {}, {}, 1.0F, 0.0F, 0, std::string(33, 'n')}),
+                 std::length_error);
+}
+
+TEST(GameSnapshotTest, SupportsNamesExactly32BytesLong) {
+    const std::string name(32, 'n');
+    const EntitySnapshot entity{1, EntityType::Ship, {}, {}, 1.0F, 0.0F, 0, name};
+    const GameSnapshot original{{entity}, 0U};
+
+    const auto decoded = GameSnapshot::Deserialize(original.Serialize());
+
+    ASSERT_EQ(decoded.getSnapshots().size(), 1U);
+    EXPECT_EQ(decoded.getSnapshots()[0].getName(), name);
+}
+
+TEST(GameSnapshotTest, RejectsNamesContainingNullBytes) {
+    const std::string name{"player\0one", 10};
+
+    EXPECT_THROW((void)(EntitySnapshot{1, EntityType::Ship, {}, {}, 1.0F, 0.0F, 0, name}), std::invalid_argument);
+}
+
+TEST(GameSnapshotTest, RejectsNonzeroBytesAfterNameTerminator) {
+    GameSnapshot snapshot{{EntitySnapshot{1, EntityType::Ship, {}, {}, 1.0F, 0.0F, 0, "name"}}, 0U};
+    auto bytes = snapshot.Serialize();
+    bytes[62] = static_cast<std::uint8_t>('x');
 
     EXPECT_THROW((void)GameSnapshot::Deserialize(bytes), std::invalid_argument);
 }

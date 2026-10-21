@@ -1,9 +1,13 @@
 #include "game_snapshot.h"
 
+#include <array>
 #include <bit>
+#include <concepts>
+#include <cstddef>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace snapshot {
@@ -18,41 +22,50 @@ static_assert(sizeof(math::Scalar) == sizeof(std::uint64_t));
 static_assert(std::numeric_limits<float>::is_iec559);
 static_assert(std::numeric_limits<math::Scalar>::is_iec559);
 
-constexpr std::size_t kEntityMinimumSize = 53;
 // Запись байтов для каждой сущности в GameSnapshot.
 // Каждая сущность сериализуется в фиксированный размер,
 // что упрощает десериализацию и обеспечивает предсказуемость формата данных.
-// 53 байта на сущность, включая:
-// 4 (id) + 1 (type) + 8*4 (position + velocity) + 4 (radius) + 4 (rotation_angle) + 4 (score) + 0 (name length)
+// 81 байт на сущность, включая имя длиной 32 байта.
+// 4 (id) + 1 (type) + 8*4 (position + velocity) + 4 (radius) + 4 (rotation_angle) + 4 (score) + 32 (name) = 81
+constexpr std::size_t kEntitySize = 4 + 1 + 8 * 4 + 4 + 4 + 4 + EntitySnapshot::kNameSize;
+static_assert(kEntitySize == 81, "wire format changed, update kEntitySize");
+
+template <std::unsigned_integral T>
+constexpr T toNetworkOrder(T value) noexcept {
+    if constexpr (std::endian::native == std::endian::little) {
+        T result{};
+        for (std::size_t i = 0; i < sizeof(T); ++i) {
+            result = static_cast<T>((result << 8) | (value & static_cast<T>(0xFF)));
+            value >>= 8;
+        }
+        return result;
+    } else {
+        static_assert(std::endian::native == std::endian::big,
+                      "GameSnapshot requires a little- or big-endian platform");
+        return value;
+    }
+}
+
 class ByteWriter {
 public:
     // Методы для записи различных типов данных в последовательность байтов.
     void writeU8(std::uint8_t value) {
-        bytes_.push_back(value);
+        writeAsBytes(value);
     }
 
     void writeU32(std::uint32_t value) {
-        for (int shift = 24; shift >= 0; shift -= 8) {
-            bytes_.push_back(static_cast<std::uint8_t>(value >> shift));
-        }
+        writeAsBytes(toNetworkOrder(value));
     }
 
     void writeU64(std::uint64_t value) {
-        for (int shift = 56; shift >= 0; shift -= 8) {
-            bytes_.push_back(static_cast<std::uint8_t>(value >> shift));
-        }
+        writeAsBytes(toNetworkOrder(value));
     }
 
-    void writeString(const std::string& value) {
-        if (value.size() > std::numeric_limits<std::uint32_t>::max()) {
-            throw std::length_error("GameSnapshot::Serialize: entity name is too long");
-        }
-
-        writeU32(static_cast<std::uint32_t>(value.size()));
-        if (!value.empty()) {
-            const auto* begin = reinterpret_cast<const std::uint8_t*>(value.data());
-            bytes_.insert(bytes_.end(), begin, begin + value.size());
-        }
+    void writeName(const std::array<char, EntitySnapshot::kNameSize>& value) {
+        const auto raw = std::as_bytes(std::span{value});
+        bytes_.insert(bytes_.end(),
+                      reinterpret_cast<const std::uint8_t*>(raw.data()),
+                      reinterpret_cast<const std::uint8_t*>(raw.data()) + raw.size());
     }
 
     std::vector<std::uint8_t> takeBytes() && {
@@ -60,6 +73,13 @@ public:
     }
 
 private:
+    template <std::unsigned_integral T>
+    void writeAsBytes(const T& value) {
+        for (const std::byte byte : std::as_bytes(std::span{&value, std::size_t{1}})) {
+            bytes_.push_back(std::to_integer<std::uint8_t>(byte));
+        }
+    }
+
     std::vector<std::uint8_t> bytes_;
 };
 
@@ -91,15 +111,19 @@ public:
         return value;
     }
 
-    std::string readString() {
-        const std::uint32_t length = readU32();
-        require(length);
-        if (length == 0) {
-            return {};
-        }
-
+    std::string_view readName() {
+        require(EntitySnapshot::kNameSize);
         const auto* begin = reinterpret_cast<const char*>(bytes_.data() + offset_);
-        offset_ += length;
+        std::size_t length = 0;
+        while (length < EntitySnapshot::kNameSize && begin[length] != '\0') {
+            ++length;
+        }
+        for (std::size_t i = length; i < EntitySnapshot::kNameSize; ++i) {
+            if (begin[i] != '\0') {
+                throw std::invalid_argument("GameSnapshot::Deserialize: invalid name padding");
+            }
+        }
+        offset_ += EntitySnapshot::kNameSize;
         return {begin, length};
     }
 
@@ -174,7 +198,7 @@ void writeEntity(ByteWriter& writer, const EntitySnapshot& entity) {
     writer.writeU32(std::bit_cast<std::uint32_t>(entity.getRadius()));
     writer.writeU32(std::bit_cast<std::uint32_t>(entity.getRotationAngle()));
     writer.writeU32(entity.getScore());
-    writer.writeString(entity.getName());
+    writer.writeName(entity.getNameBuffer());
 }
 
 // Чтение данных сущности из байтового потока.
@@ -192,9 +216,9 @@ EntitySnapshot readEntity(ByteReader& reader) {
     const float radius = std::bit_cast<float>(reader.readU32());
     const float rotation_angle = std::bit_cast<float>(reader.readU32());
     const std::uint32_t score = reader.readU32();
-    std::string name = reader.readString();
+    const std::string_view name = reader.readName();
 
-    return EntitySnapshot{id, type, position, velocity, radius, rotation_angle, score, std::move(name)};
+    return EntitySnapshot{id, type, position, velocity, radius, rotation_angle, score, name};
 }
 
 }  // namespace
@@ -218,7 +242,7 @@ GameSnapshot GameSnapshot::Deserialize(const std::vector<std::uint8_t>& buffer) 
     const std::uint32_t tick_number = reader.readU32();
     const std::uint32_t entity_count = reader.readU32();
 
-    if (entity_count > reader.remaining() / kEntityMinimumSize) {
+    if (entity_count > reader.remaining() / kEntitySize) {
         throw std::invalid_argument("GameSnapshot::Deserialize: impossible entity count");
     }
 
