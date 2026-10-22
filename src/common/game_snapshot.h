@@ -10,6 +10,7 @@ class GameSnapshot {
 public:
     GameSnapshot(std::vector<EntitySnapshot> snapshots, std::uint32_t tick_number) :
         snapshots_(std::move(snapshots)), tick_number_(tick_number) {}
+    GameSnapshot() = default;
 
     GameSnapshot(const GameSnapshot&) = delete;
     GameSnapshot& operator=(const GameSnapshot&) = delete;
