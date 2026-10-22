@@ -36,13 +36,13 @@ public:
             const auto idx = free_indices_.back();
             free_indices_.pop_back();
             storage_[idx].emplace();
-            storage_[idx]->id = next_id_++;
+            storage_[idx]->id = types::EntityId{next_id_++};
             return &*storage_[idx];
         }
 
         storage_.emplace_back();
         storage_.back().emplace();
-        storage_.back()->id = next_id_++;
+        storage_.back()->id = types::EntityId{next_id_++};
         return &*storage_.back();
     }
 

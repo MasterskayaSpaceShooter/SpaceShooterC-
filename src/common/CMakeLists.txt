@@ -7,9 +7,10 @@ target_include_directories(common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Все файлы лежат прямо в этой папке, без путей src/
 target_sources(common PRIVATE
-        # Здесь перечисляем файлы реализации. Они компонуются в статическую библиотеку common ПРИМЕР:
+        # Здесь перечисляем файлы реализации. Они компонуются в статическую библиотеку common
         strong_id.h
         strong_id_format.h
+        config.h
         logger.h
         frame_codec.h
         math_utils.h
