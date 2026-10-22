@@ -19,6 +19,8 @@ target_sources(common PRIVATE
         entity_snapshot.h
         entity_snapshot_serder.h
         entity_snapshot_serder.cpp
+        game_snapshot.h
+        game_snapshot.cpp
 )
 
 target_link_libraries(common PUBLIC Boost::boost)
