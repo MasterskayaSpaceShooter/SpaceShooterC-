@@ -7,6 +7,7 @@ add_executable(unit_tests_common
         test_circle_collision.cpp
 	test_math_ship_physics.cpp
         test_entity_snapshot_serder.cpp
+        test_game_snapshot.cpp
 )
 
 target_link_libraries(unit_tests_common PRIVATE common GTest::gtest_main)
