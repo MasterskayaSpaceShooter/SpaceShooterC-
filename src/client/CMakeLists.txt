@@ -10,6 +10,8 @@ add_library(client STATIC
         client_state.h
         game_controller.h
         game_controller.cpp
+        score_view.h
+        score_view.cpp
 )
 
 # Публично отдаём include-пути, чтобы все, кто линкуется к client, видели заголовки
