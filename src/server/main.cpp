@@ -6,6 +6,7 @@
 #include "network_context.h"
 #include "network_response_router.h"
 #include "tcp_server.h"
+#include "world_instance.h"
 
 int main() {
     try {
@@ -15,8 +16,10 @@ int main() {
         auto router = NetworkResponseRouter::create(event_bus);
         auto server = std::make_shared<TcpServer>(nc.getContext(), 8080, event_bus, frame_codec);
 
+        auto world = WorldInstance::create(nc.getContext(), event_bus);
         nc.start();
         server->start();
+        world->start();
         LOG_INFO("[Server] SpaceShooterC- Server Started.");
 
         std::cin.get();  // блокирует до enter
@@ -24,6 +27,7 @@ int main() {
         server->stop();
         nc.stop();
         nc.wait();
+        world->stop();
 
     } catch (const std::exception& e) {
         LOG_ERROR("[Server] Exception: {}", e.what());

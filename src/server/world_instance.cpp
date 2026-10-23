@@ -11,12 +11,15 @@ std::shared_ptr<WorldInstance> WorldInstance::create(boost::asio::io_context& io
                                                      double tick_rate_hz,
                                                      math::Scalar world_width,
                                                      math::Scalar world_height) {
-    return std::make_shared<WorldInstance>(io_context,
-                                           std::move(event_bus),
-                                           tick_rate_hz,
-                                           CreateToken{},
-                                           world_width,
-                                           world_height);
+    auto world = std::make_shared<WorldInstance>(io_context,
+                                                 std::move(event_bus),
+                                                 tick_rate_hz,
+                                                 CreateToken{},
+                                                 world_width,
+                                                 world_height);
+    // в setupSubscriptions WI подписывается на события
+    world->setupSubscriptions();
+    return world;
 }
 
 WorldInstance::WorldInstance(boost::asio::io_context& io_context,
@@ -241,4 +244,26 @@ snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
 
 void WorldInstance::broadcastSnapshot() {
     // TODO: разослать buildGameSnapshot() всем клиентам через event_bus_.
+}
+
+void WorldInstance::setupSubscriptions() {
+    // weak_from_this нужна чтобы проверить, жив ли WI, когда сработает колбэк
+    auto weak_self = weak_from_this();
+
+    // подписка на отключение клиента
+    sub_disconnect_ = event_bus_->subscribe<ClientDisconnectedEvent>([weak_self](const ClientDisconnectedEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onClientDisconnected(event);
+        }
+    });
+
+    // далее другие подписки
+}
+
+void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::PlayerQuit;
+    action.session_id = event.session_id;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] PlayerQuit for session {}", event.session_id);
 }
