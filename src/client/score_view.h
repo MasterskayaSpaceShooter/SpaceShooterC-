@@ -3,6 +3,9 @@
 #include "client_world.h"
 #include "renderer.h"
 
+#include <cstdint>
+#include <string>
+
 namespace client {
 
 /**
@@ -18,6 +21,11 @@ public:
      * @param world Ссылка на локальный мир клиента.
      */
     void render(IRenderer& renderer, const ClientWorld& world);
+
+private:
+    std::uint32_t last_score_{0};
+    std::string cached_text_{};
+    bool is_initialized_{false};
 };
 
 }  // namespace client
