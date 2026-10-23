@@ -14,10 +14,19 @@
 #include "event_bus.h"
 #include "game_snapshot.h"
 #include "math_utils.h"
+#include "network_events.h"
 #include "thread_safe_queue.h"
 
-// TODO: заменить на настоящее событие действия игрока, переданное в ThreadSafeQueue.
-struct ActionEvent {};
+enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
+
+struct ActionEvent {
+    SessionId session_id{};
+    ActionType type{ActionType::PlayerJoin};
+    math::Vector2D move_direction{};
+    math::Vector2D target_point{};
+    bool is_shooting{false};
+    std::string player_name{};
+};
 
 /**
  * @brief Единый игровой мир сервера.
@@ -289,6 +298,22 @@ private:
      */
     void broadcastSnapshot();
 
+    /**
+     * @brief Здесь лежат все подписки
+     * @details Вызывается из create() и вызывает обработчики подписок
+     * @inputs ходных параметров нет.
+     * @outputs Выходных значений нет.
+     */
+    void setupSubscriptions();
+
+    /**
+     * @brief Колбек для подписки на событие ClientDisconnectedEvent
+     * @details Создаёт ActionType::PlayerQuit и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины ClientDisconnectedEvent
+     * @outputs Выходных значений нет.
+     */
+    void onClientDisconnected(const ClientDisconnectedEvent& event);
+
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
     // void onCollision(domain::Entity& ship, domain::Entity& asteroid);
@@ -299,14 +324,13 @@ private:
     ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
     [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
     std::shared_ptr<events::EventBus> event_bus_;   ///< Шина событий сервера
-    boost::asio::strand<boost::asio::io_context::executor_type>
-        tick_strand_;  ///< Сериализация всех операций игрового цикла
-    boost::asio::steady_timer tick_timer_;  ///< Таймер игровых тиков
-    std::chrono::microseconds
-        tick_interval_;  ///< Интервал одного тика (микросекунды для точности при высоких tick_rate_hz)
+    boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
+    boost::asio::steady_timer tick_timer_;              ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;           ///< Интервал одного тика
     math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;  ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;  ///< Защита last_snapshot_
+    mutable std::mutex last_snapshot_mutex_;             ///< Защита last_snapshot_
+    boost::signals2::scoped_connection sub_disconnect_;  ///< Подписка на ClientDisconnectedEvent
 };
