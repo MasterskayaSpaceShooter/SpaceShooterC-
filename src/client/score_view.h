@@ -1,10 +1,10 @@
 #pragma once
 
-#include "client_world.h"
-#include "renderer.h"
-
 #include <cstdint>
 #include <string>
+
+#include "client_world.h"
+#include "renderer.h"
 
 namespace client {
 
