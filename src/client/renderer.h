@@ -24,5 +24,8 @@ public:
 
     /// Экран смерти с финальным счётом.
     virtual void renderDeathScreen(std::uint32_t score) = 0;
+
+    /// Отрисовка произвольного текста (например, счёта, таблицы лидеров).
+    virtual void drawText(const std::string& text, int x, int y) = 0;
 };
 }  // namespace client
