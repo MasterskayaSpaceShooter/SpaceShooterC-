@@ -1,7 +1,7 @@
 #include "score_view.h"
 
-#include <string>
 #include <format>
+#include <string>
 
 namespace client {
 
@@ -30,7 +30,7 @@ void ScoreView::render(IRenderer& renderer, const ClientWorld& world) {
     }
 
     // TODO: make class parameters, change on window size change
-    renderer.drawText(score_text, 10, 10);
+    renderer.drawText(cached_text_, 10, 10);
 }
 
 }  // namespace client
