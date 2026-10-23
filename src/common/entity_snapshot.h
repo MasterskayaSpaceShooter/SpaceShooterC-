@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
-#include <optional>
-#include <string>
+#include <stdexcept>
+#include <string_view>
 
 #include "math_utils.h"
 #include "types.h"
