@@ -4,7 +4,9 @@
 #include <stdexcept>
 #include <utility>
 
+#include "entity_utils.h"
 #include "logger.h"
+#include "network_response_router.h"
 
 std::shared_ptr<WorldInstance> WorldInstance::create(boost::asio::io_context& io_context,
                                                      std::shared_ptr<events::EventBus> event_bus,
@@ -238,12 +240,17 @@ void WorldInstance::maintainAsteroidPopulation() {
 }
 
 snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
-    // TODO: собрать снимок состояния мира для рассылки клиентам.
-    return snapshot::GameSnapshot{};
+    auto snapshots = domain::buildEntitySnapshots(entities_);
+    const auto tick_number = static_cast<std::uint32_t>(current_tick_.load());
+    return snapshot::GameSnapshot{std::move(snapshots), tick_number};
 }
 
 void WorldInstance::broadcastSnapshot() {
-    // TODO: разослать buildGameSnapshot() всем клиентам через event_bus_.
+    // Собираем и сериализуем снимок мира, затем публикуем в шину событий.
+    // session_id == 0 (kBroadcastSessionId) — маркер массовой рассылки всем клиентам,
+    // обработку берёт на себя SessionRegistry.
+    const auto payload = buildGameSnapshot().Serialize();
+    event_bus_->publish(SendPacketEvent{NetworkResponseRouter::kBroadcastSessionId, std::move(payload)});
 }
 
 void WorldInstance::setupSubscriptions() {

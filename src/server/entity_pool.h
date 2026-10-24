@@ -73,6 +73,22 @@ public:
         return storage_;
     }
 
+    /// Const access to storage for iteration.
+    const std::deque<std::optional<Entity>>& storage() const {
+        return storage_;
+    }
+
+    /**
+     * @brief Активен ли слот пула: занят сущностью, не помеченной на удаление.
+     * @details Сущность с типом EntityType::None считается неинициализированной
+     *          и неактивной.
+     * @param slot Входные данные: Слот хранилища пула.
+     * @return true Если slot.has_value() && slot->type != EntityType::None && !slot->isDestroyed.
+     */
+    [[nodiscard]] bool isActive(const std::optional<Entity>& slot) const noexcept {
+        return slot.has_value() && slot->type != types::EntityType::None && !slot->isDestroyed;
+    }
+
 private:
     std::deque<std::optional<Entity>> storage_;
     std::vector<std::size_t> free_indices_;
