@@ -222,7 +222,45 @@ std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() cons
 }
 
 void WorldInstance::processInputQueue() {
-    // TODO: извлечь действия игроков из action_queue_ и применить их к миру.
+    auto actions = action_queue_.drain();
+    if (actions.empty()) {
+        return;
+    }
+
+    // проходимся по всем действиям игроков которые есть в игре.
+    for (const auto& action : actions) {
+        switch (action.type) {
+            case ActionType::PlayerJoin:
+                // вот тут кто-то добавит в мапу session_to_ship_ связку айди сессии и корабля
+                break;
+            case ActionType::PlayerQuit: {
+                /* Достаём EntityId мапы session_to_ship_ по action.session_id, находим в EntityPool нужный корабль и
+                 * помечаем удалённым, выходим из цикла и удаляем связь из мапы session_to_ship_, в конце вызываем
+                 * entities_.recycleDestroyed(), он сам удалит помеченные мертвыми корабли из памяти */
+                auto it = session_to_ship_.find(action.session_id);
+                if (it != session_to_ship_.end()) {
+                    auto ship_id = it->second;
+                    for (auto& entity : entities_.storage()) {
+                        if (entity.has_value() && entity->id == ship_id) {
+                            entity->isDestroyed = true;
+                            break;
+                        }
+                    }
+                    session_to_ship_.erase(action.session_id);
+                }
+                break;
+            }
+            case ActionType::MoveAndShoot:
+                /* code */
+                break;
+            case ActionType::Respawn:
+                /* code */
+                break;
+            default:
+                break;
+        }
+    }
+    entities_.recycleDestroyed();
 }
 
 void WorldInstance::updatePhysics(float) {
