@@ -2,11 +2,83 @@
 
 #include <cmath>
 #include <optional>
+#include <string>
 #include <type_traits>
 
 #include "entity.h"
+#include "entity_snapshot.h"
 
 namespace domain {
+
+/**
+ * @brief Преобразует доменную сущность в снимок для рассылки клиентам.
+ * @details Переносит все компоненты 1:1: transform, ship, health, combat, asteroid.
+ *          Имя корабля копируется из NUL-terminated массива в std::string.
+ * @param entity Входные данные: Доменная сущность доменного мира.
+ * @return snapshot::EntitySnapshot Снимок сущности.
+ */
+[[nodiscard]] inline snapshot::EntitySnapshot toEntitySnapshot(const Entity& entity) {
+    snapshot::EntitySnapshot result;
+    result.id = entity.id;
+    result.type = entity.type;
+    result.mass = entity.mass;
+    result.radius = entity.radius;
+    result.is_destroyed = entity.isDestroyed;
+
+    if (entity.transform) {
+        result.transform = snapshot::TransformSnapshot{entity.transform->position,
+                                                       entity.transform->velocity,
+                                                       entity.transform->angle};
+    }
+    if (entity.ship) {
+        result.ship = snapshot::ShipSnapshot{std::string{entity.ship->name.data()},
+                                             entity.ship->score,
+                                             entity.ship->thrust_power,
+                                             entity.ship->drag,
+                                             entity.ship->is_thrusting,
+                                             entity.ship->frags};
+    }
+    if (entity.health) {
+        result.health = snapshot::HealthSnapshot{entity.health->current, entity.health->max};
+    }
+    if (entity.combat) {
+        result.combat = snapshot::CombatSnapshot{entity.combat->damage, entity.combat->owner_id};
+    }
+    if (entity.asteroid) {
+        result.asteroid = snapshot::AsteroidSnapshot{entity.asteroid->score_reward};
+    }
+    return result;
+}
+
+/**
+ * @brief Строит снимки всех живых сущностей из хранилища пула.
+ * @details Пустые слоты и сущности с флагом isDestroyed пропускаются.
+ * @tparam EntityContainer Контейнер Entity или std::optional<Entity>
+ *         (работает с EntityPool::storage() напрямую).
+ * @param storage Входные данные: Хранилище сущностей.
+ * @return std::vector<snapshot::EntitySnapshot> Снимки сущностей.
+ */
+template <typename EntityContainer>
+[[nodiscard]] inline std::vector<snapshot::EntitySnapshot> buildEntitySnapshots(const EntityContainer& storage) {
+    std::vector<snapshot::EntitySnapshot> snapshots;
+    snapshots.reserve(storage.size());
+
+    for (const auto& slot : storage) {
+        if constexpr (std::is_same_v<std::remove_cvref_t<decltype(slot)>, std::optional<Entity>>) {
+            if (!slot || slot->isDestroyed) {
+                continue;
+            }
+            snapshots.push_back(toEntitySnapshot(*slot));
+        } else {
+            if (slot.isDestroyed) {
+                continue;
+            }
+            snapshots.push_back(toEntitySnapshot(slot));
+        }
+    }
+
+    return snapshots;
+}
 
 /**
  * @brief Integrate motion for all live entities and resolve world bounds.
@@ -52,14 +124,14 @@ inline void updateMovementAndBounds(EntityContainer& entities,
 
         Entity& entity = *entity_ptr;
 
-        if (entity.type == EntityType::None || entity.isDestroyed || !entity.transform.has_value()) {
+        if (entity.type == types::EntityType::None || entity.isDestroyed || !entity.transform.has_value()) {
             continue;
         }
 
         auto& t = *entity.transform;
 
         // Integrate.
-        if (entity.type == EntityType::Ship && entity.ship.has_value()) {
+        if (entity.type == types::EntityType::Ship && entity.ship.has_value()) {
             auto& s = *entity.ship;
             math::updateShipPhysics(t.position, t.velocity, t.angle, s.is_thrusting, s.thrust_power, s.drag, dt);
         } else {
@@ -67,7 +139,7 @@ inline void updateMovementAndBounds(EntityContainer& entities,
         }
 
         // Asteroids wrap once fully outside the world.
-        if (entity.type == EntityType::Asteroid) {
+        if (entity.type == types::EntityType::Asteroid) {
             const math::Scalar r = entity.radius;
 
             if (t.position.x + r < 0.0) {
@@ -97,15 +169,15 @@ inline void updateMovementAndBounds(EntityContainer& entities,
         }
 
         switch (entity.type) {
-            case EntityType::None:
+            case types::EntityType::None:
                 // Safety net; unreachable.
                 break;
 
-            case EntityType::Bullet:
+            case types::EntityType::Bullet:
                 entity.isDestroyed = true;
                 break;
 
-            case EntityType::Ship:
+            case types::EntityType::Ship:
                 if (clamped_x) {
                     t.velocity.x = 0.0;
                 }
@@ -115,7 +187,7 @@ inline void updateMovementAndBounds(EntityContainer& entities,
                 t.position = clamped;
                 break;
 
-            case EntityType::Asteroid:
+            case types::EntityType::Asteroid:
                 // Unreachable: asteroids are handled (wrapped) above.
                 break;
         }
