@@ -13,7 +13,7 @@ enum class ClientState : std::uint8_t {
     InGame,
     /// Match ended for this client (server sent GAME_END).
     /// NOT terminal for the client.
-    GameEnd,
+    GameOver,
 };
 
 /// Human-readable name of a state, for logs.
@@ -29,8 +29,8 @@ enum class ClientState : std::uint8_t {
             return "Joining";
         case ClientState::InGame:
             return "InGame";
-        case ClientState::GameEnd:
-            return "GameEnd";
+        case ClientState::GameOver:
+            return "GameOver";
     }
     return "Unknown";
 }

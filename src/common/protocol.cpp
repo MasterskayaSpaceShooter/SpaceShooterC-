@@ -8,7 +8,7 @@ namespace protocol {
 namespace {
 
 std::vector<std::uint8_t> toBytes(std::string_view s) {
-    return {s.begin(), s.end()};  // range ctor: unsigned char(char) per element
+    return std::vector<std::uint8_t>(s.begin(), s.end());
 }
 
 std::string_view toWire(types::Direction d) {

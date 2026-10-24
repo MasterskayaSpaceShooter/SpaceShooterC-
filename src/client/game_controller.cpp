@@ -25,6 +25,9 @@ std::shared_ptr<GameController> GameController::create(TcpClientPtr tcp, boost::
 }
 
 void GameController::start(std::string host, std::uint16_t port, std::string playerName) {
+    if (!validatePlayerName(playerName)) {
+        return;
+    }
     LOG_INFO("start() requested: host='{}' port={} player='{}'", host, port, playerName);
     boost::asio::post(
         strand_,
@@ -41,6 +44,9 @@ void GameController::shutdown() {
 }
 
 void GameController::rejoin(std::string host, std::uint16_t port, std::string playerName) {
+    if (!validatePlayerName(playerName)) {
+        return;
+    }
     LOG_INFO("rejoin() requested: host='{}' port={} player='{}'", host, port, playerName);
     boost::asio::post(
         strand_,
@@ -127,6 +133,7 @@ void GameController::doStart(const std::string& host, std::uint16_t port, std::s
 
 void GameController::doShutdown() {
     LOG_INFO("Shutting down transport (state: {})", convertStateToString(state_.load()));
+    ++connectGen_;  // invalidate any in-flight connect callback
     tcp_->disconnect();
     setState(ClientState::Disconnected);
     // Callbacks stay wired; the Disconnected guard in onMessageOnStrand()
@@ -186,6 +193,20 @@ void GameController::setState(ClientState next) noexcept {
         return;
     state_.store(next);
     LOG_INFO("GameController state: {} -> {}", convertStateToString(current), convertStateToString(next));
+}
+
+bool GameController::validatePlayerName(const std::string& name) {
+    if (name.empty()) {
+        LOG_ERROR("playerName must not be empty");
+        return false;
+    }
+    for (unsigned char c : name) {
+        if (c <= 0x20 || c == 0x7f) {
+            LOG_ERROR("playerName must not contain whitespace or control characters");
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace client

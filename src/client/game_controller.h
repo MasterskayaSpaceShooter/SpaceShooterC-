@@ -19,8 +19,9 @@ namespace client {
  *
  * @par Scope
  * Owns the client state machine and issues commands to the server.
- * For now the only command is JOIN; the payload is a plain ASCII string
- * `"JOIN <username>"`.
+ * For now the only command is JOIN; the wire payload is `"JOIN <name>"`
+ * with a single space as delimiter. playerName containing invalid characters
+ * (whitespace / control / NUL) — rejected.
  *
  * @par Threading model
  * Async. All mutation happens on `strand_`. Public methods are callable from
@@ -82,11 +83,16 @@ public:
     /**
      * @brief Connect and send JOIN on success.
      *
-     * @note Posted unconditionally. The re-entry guard lives in doStart() so
-     * concurrent start() / shutdown() calls are serialized on the strand.
-     * doStart() only proceeds when the current state is Disconnected; from
-     * any other state (e.g. GameEnd) this call is a logged no-op. To reset
-     * from an arbitrary state, use rejoin().
+     * @note playerName is validated synchronously on the calling thread
+     * before posting. If invalid, LOG_ERROR is emitted and the function
+     * returns WITHOUT posting and WITHOUT changing state.
+     *
+     * If playerName is valid, the work is posted to the strand. The
+     * re-entry guard lives in doStart() so concurrent start() / shutdown()
+     * are serialized on the strand. doStart() only proceeds when the
+     * current state is Disconnected; from any other state (e.g. GameEnd)
+     * this call is a logged no-op. To reset from an arbitrary state, use
+     * rejoin().
      */
     void start(std::string host, std::uint16_t port, std::string playerName);
 
@@ -103,11 +109,14 @@ public:
     /**
      * @brief Ends the current session and starts a fresh one.
      *
-     * Posts doShutdown() and doStart() back-to-back on strand_, so the two
-     * cannot be interleaved with a racing start() / shutdown() / rejoin().
+     * @note playerName is validated synchronously on the calling thread
+     * before posting. If invalid, LOG_ERROR is emitted and the function
+     * returns WITHOUT ending the current session: state is left
+     * unchanged (e.g. stays in GameEnd / InGame).
      *
-     * Safe from ANY state, including Connecting (the in-flight connect is
-     * invalidated by connectGen_; its callback is dropped).
+     * If playerName is valid, posts doShutdown() and doStart()
+     * back-to-back on strand_, so the two cannot be interleaved with a
+     * racing start() / shutdown() / rejoin().
      *
      * @par Rejoin policy (MVP: zero cooldown)
      * There is NO client-side cooldown. After GAME_END the app may call
@@ -171,6 +180,15 @@ private:
      * @brief Updates `state_`. No-op if unchanged. Strand-only.
      */
     void setState(ClientState next) noexcept;
+
+    /**
+     * @brief Validates playerName against the wire-protocol requirements
+     *        of "JOIN <name>": non-empty, and no character <= 0x20 or
+     *        0x7f. Emits LOG_ERROR on failure (side effect). Does not
+     *        touch state. Called synchronously from start()/rejoin()
+     *        before the strand post.
+     */
+    static bool validatePlayerName(const std::string& name);
 
     TcpClientPtr tcp_;
 
