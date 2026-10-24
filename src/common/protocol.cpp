@@ -52,7 +52,10 @@ ServerMsg decode(std::span<const std::uint8_t> wire) {
 
     const auto sp = text.find(' ');
     const std::string_view keyword = (sp == std::string_view::npos) ? text : text.substr(0, sp);
-    const std::string_view argView = (sp == std::string_view::npos) ? std::string_view{} : text.substr(sp + 1);
+    std::string_view argView = (sp == std::string_view::npos) ? std::string_view{} : text.substr(sp + 1);
+
+    const auto nz = argView.find_first_not_of(" \t");
+    argView = (nz == std::string_view::npos) ? std::string_view{} : argView.substr(nz);
 
     ServerMsgType type = ServerMsgType::Unknown;
     if (keyword == "ACCEPT")

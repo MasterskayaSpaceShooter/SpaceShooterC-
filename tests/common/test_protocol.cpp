@@ -97,7 +97,7 @@ TEST(Decode, Argument_MultiWordPreservedVerbatim) {
 
 TEST(Decode, Argument_SplitAtFirstSpaceOnly) {
     // Extra spaces belong to the argument, not the keyword.
-    EXPECT_EQ(protocol::decode(asBytes("REJECT  two spaces")).argument, " two spaces");
+    EXPECT_EQ(protocol::decode(asBytes("REJECT  two spaces")).argument, "two spaces");
 }
 
 TEST(Decode, Argument_OnPayloadlessKeyword_IsLenient) {

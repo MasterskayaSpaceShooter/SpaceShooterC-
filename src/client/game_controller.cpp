@@ -172,7 +172,7 @@ void GameController::onMessageOnStrand(const std::vector<std::uint8_t>& payload)
             // Design A: match over for this client. Socket is left open —
             // the server may send a final score, or close it. Either way
             // the app drives rejoin() from its own countdown.
-            setState(ClientState::GameEnd);
+            setState(ClientState::GameOver);
             break;
 
         case protocol::ServerMsgType::Unknown: {
