@@ -1,6 +1,6 @@
-
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "entity.h"
@@ -13,7 +13,7 @@ namespace domain {
  * @param damage Amount of damage.
  * @post health.current is not less than zero.
  */
-inline void applyDamage(HealthComponent& health, std::uint16_t damage) {
+inline void applyDamage(HealthComponent& health, std::uint16_t damage) noexcept {
     if (damage >= health.current) {
         health.current = 0;
         return;
@@ -28,20 +28,10 @@ inline void applyDamage(HealthComponent& health, std::uint16_t damage) {
  * @param amount Amount of health to restore.
  * @post health.current does not exceed health.max.
  */
-inline void restoreHealth(HealthComponent& health, std::uint16_t amount) {
-    if (health.current >= health.max) {
-        health.current = health.max;
-        return;
-    }
+inline void restoreHealth(HealthComponent& health, std::uint16_t amount) noexcept {
+    const std::uint32_t new_health = static_cast<std::uint32_t>(health.current) + amount;
 
-    const std::uint16_t missing = health.max - health.current;
-
-    if (amount >= missing) {
-        health.current = health.max;
-        return;
-    }
-
-    health.current += amount;
+    health.current = static_cast<std::uint16_t>(std::min<std::uint32_t>(new_health, health.max));
 }
 
 /**
