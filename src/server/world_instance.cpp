@@ -1,12 +1,14 @@
 #include "world_instance.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "entity_utils.h"
+#include "collision_utils.h"
 #include "logger.h"
 #include "network_response_router.h"
 
@@ -130,6 +132,7 @@ void WorldInstance::shutdownTickLoop() {
     // оставлять их бессмысленно (устарели) и опасно (при перезапуске «оживут» и
     // применятся к новому состоянию игры). Молча терять их не стоит — логируем
     // количество, чтобы заметить, если клиенты продолжают спамить действиями.
+    std::lock_guard action_lock(action_mutex_);
     const auto discarded = action_queue_.drain();
     if (!discarded.empty()) {
         LOG_WARN("[WorldInstance] stop: discarded {} queued actions", discarded.size());
@@ -137,6 +140,11 @@ void WorldInstance::shutdownTickLoop() {
 }
 
 void WorldInstance::enqueueAction(ActionEvent action) {
+    std::lock_guard lock(action_mutex_);
+    if (state_.load() != State::Running) {
+        LOG_WARN("[WorldInstance] discarded action because the world is stopped");
+        return;
+    }
     action_queue_.push(std::move(action));
 }
 
@@ -227,6 +235,55 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
 }
 
 void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
+std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
+    std::lock_guard lock(last_snapshot_mutex_);
+    return last_snapshot_;
+}
+
+std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
+    if (count == 0) {
+        return {};
+    }
+    if (!std::isfinite(clearance) || clearance < 0.0) {
+        throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
+    }
+
+    const auto half_width = world_width_ * 0.5;
+    const auto half_height = world_height_ * 0.5;
+    if (clearance > half_width || clearance > half_height) {
+        return {};
+    }
+
+    std::vector<math::Vector2D> positions;
+    const auto spacing = std::max(2.0 * clearance, 1.0);
+    const auto min_x = -half_width + clearance;
+    const auto max_x = half_width - clearance;
+    const auto min_y = -half_height + clearance;
+    const auto max_y = half_height - clearance;
+
+    std::shared_lock entities_lock(entities_mutex_);
+    for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
+        for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
+            const math::Vector2D candidate{x, y};
+            const auto overlaps = std::any_of(entities_.storage().begin(),
+                                              entities_.storage().end(),
+                                              [&candidate, clearance](const auto& slot) {
+                                                  if (!slot || slot->isDestroyed || !slot->transform) {
+                                                      return false;
+                                                  }
+                                                  const auto combined_radius = clearance + slot->radius;
+                                                  return (candidate - slot->transform->position).lengthSquared() <=
+                                                         combined_radius * combined_radius;
+                                              });
+            if (!overlaps) {
+                positions.push_back(candidate);
+            }
+        }
+    }
+    return positions;
+}
+
+void WorldInstance::processInputQueue() {
     auto actions = action_queue_.drain();
     if (actions.empty()) {
         return;
@@ -272,12 +329,16 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
     entities_.recycleDestroyed();
 }
 
-void WorldInstance::updatePhysics(float) {
+void WorldInstance::updatePhysics(math::Scalar) {
     // TODO: обновить позиции кораблей, снарядов и астероидов за интервал тика (dt).
 }
 
 void WorldInstance::resolveCollisions() {
     // TODO: найти пересечения сущностей и вызвать соответствующие onCollision().
+}
+
+void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
+    domain::collision::onCollision(ship, asteroid);
 }
 
 void WorldInstance::maintainAsteroidPopulation() {

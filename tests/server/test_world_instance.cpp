@@ -13,6 +13,35 @@ TEST(WorldInstance, CreateWithNullEventBusThrows) {
     EXPECT_THROW(WorldInstance::create(io_context, nullptr), std::invalid_argument);
 }
 
+TEST(WorldInstance, RejectsNonPositiveTickRate) {
+    boost::asio::io_context io_context;
+
+    EXPECT_THROW(WorldInstance::create(io_context, events::EventBus::create(), 0.0), std::invalid_argument);
+}
+
+TEST(WorldInstance, LastSnapshotIsNullBeforeFirstTick) {
+    NetworkContext nc(1);
+    auto world = WorldInstance::create(nc.getContext(), events::EventBus::create());
+
+    EXPECT_EQ(world->lastSnapshot(), nullptr);
+    world->stop();
+}
+
+TEST(WorldInstance, FreePositionsReturnsCandidatesInsideWorld) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 100.0, 100.0);
+
+    const auto positions = world->freePositions(3, 10.0);
+
+    ASSERT_EQ(positions.size(), 3u);
+    for (const auto& position : positions) {
+        EXPECT_GE(position.x, -40.0);
+        EXPECT_LE(position.x, 40.0);
+        EXPECT_GE(position.y, -40.0);
+        EXPECT_LE(position.y, 40.0);
+    }
+}
+
 TEST(WorldInstance, StopWithoutStartIsNoOp) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create());
@@ -53,8 +82,8 @@ TEST(WorldInstance, EnqueueActionsConcurrentlyWhileRunning) {
             }
         });
     }
-    for (auto& t : writers) {
-        t.join();
+    for (auto& thread : writers) {
+        thread.join();
     }
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
@@ -64,6 +93,27 @@ TEST(WorldInstance, EnqueueActionsConcurrentlyWhileRunning) {
     EXPECT_GT(world->currentTick(), 0u);
 
     world->stop();
+    nc.stop();
+    nc.wait();
+}
+
+TEST(WorldInstance, StopWaitsForTickLoopToStop) {
+    NetworkContext nc(1);
+    auto world = WorldInstance::create(nc.getContext(), events::EventBus::create(), 100.0);
+    world->start();
+    nc.start();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (world->currentTick() == 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_GT(world->currentTick(), 0u);
+
+    world->stop();
+    const auto stopped_tick = world->currentTick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    EXPECT_EQ(world->currentTick(), stopped_tick);
+
     nc.stop();
     nc.wait();
 }
