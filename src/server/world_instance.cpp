@@ -358,6 +358,58 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
     }
 }
 
+std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const {
+    std::vector<snapshot::LeaderboardEntry> top_players;
+    auto& storage = const_cast<domain::EntityPool&>(entities_).storage();
+
+    for (const auto& slot : storage) {
+        // Пропускаем пустые слоты
+        if (!slot.has_value())
+            continue;
+        const auto& entity = slot.value();
+
+        // Учитываем только живых игроков (тип Ship + есть компонент + health > 0)
+        if (entity.type == types::EntityType::Ship && entity.ship.has_value() && entity.health.has_value() &&
+            entity.health->current > 0) {
+            // Конвертируем char[32] в std::string
+            std::string player_name(entity.ship->name.data());
+            top_players.push_back({player_name, entity.ship->score});
+        }
+    }
+
+    // Сортируем по убыванию очков
+    std::sort(top_players.begin(), top_players.end(), [](const auto& a, const auto& b) {
+        return a.score > b.score;
+    });
+
+    // Оставляем топ-10
+    constexpr size_t kMaxLeaderboardSize = 10;
+    if (top_players.size() > kMaxLeaderboardSize) {
+        top_players.resize(kMaxLeaderboardSize);
+    }
+
+    return top_players;
+}
+
+snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
+    std::vector<snapshot::EntitySnapshot> snapshots;
+
+    auto& storage = const_cast<domain::EntityPool&>(entities_).storage();
+    for (const auto& slot : storage) {
+        if (slot.has_value()) {
+            // ... (тут логика конвертации domain::Entity в snapshot::EntitySnapshot)
+        }
+    }
+
+    // Собираем таблицу лидеров
+    auto leaderboard = buildLeaderboard();
+
+    // Возвращаем снапшот
+    return snapshot::GameSnapshot(std::move(snapshots),
+                                  std::move(leaderboard),
+                                  static_cast<std::uint32_t>(current_tick_.load()));
+}
+
 snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
     domain::buildEntitySnapshots(entities_, snapshot_buffer_);
     const auto tick_number = static_cast<std::uint32_t>(current_tick_.load());

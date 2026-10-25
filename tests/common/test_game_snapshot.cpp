@@ -92,7 +92,7 @@ void ExpectEntityEq(const EntitySnapshot& actual, const EntitySnapshot& expected
 
 TEST(GameSnapshotTest, RoundTripsAllEntityFields) {
     const std::vector<EntitySnapshot> entities{MakeShip(), MakeAsteroid()};
-    GameSnapshot original{entities, 0x12345678U};
+    GameSnapshot original{entities, {}, 0x12345678U};
 
     const auto bytes = original.Serialize();
     const auto decoded = GameSnapshot::Deserialize(bytes);
@@ -105,13 +105,13 @@ TEST(GameSnapshotTest, RoundTripsAllEntityFields) {
 }
 
 TEST(GameSnapshotTest, EncodesHeaderInNetworkByteOrder) {
-    GameSnapshot snapshot{{}, 0x12345678U};
+    GameSnapshot snapshot{{}, {}, 0x12345678U};
 
     EXPECT_EQ(snapshot.Serialize(), (Bytes{0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0}));
 }
 
 TEST(GameSnapshotTest, RoundTripsEmptySnapshot) {
-    GameSnapshot original{{}, 19U};
+    GameSnapshot original{{}, {}, 19U};
 
     const auto decoded = GameSnapshot::Deserialize(original.Serialize());
 
@@ -123,7 +123,7 @@ TEST(GameSnapshotTest, SupportsLongNamesAndEmbeddedNullBytes) {
     auto entity = MakeShip();
     entity.ship->name = std::string(4096, 'n');
     entity.ship->name[10] = '\0';
-    const GameSnapshot original{{entity}, 0U};
+    const GameSnapshot original{{entity}, {}, 0U};
 
     const auto decoded = GameSnapshot::Deserialize(original.Serialize());
 
@@ -134,7 +134,7 @@ TEST(GameSnapshotTest, SupportsLongNamesAndEmbeddedNullBytes) {
 TEST(GameSnapshotTest, RejectsTruncatedInput) {
     EXPECT_THROW((void)GameSnapshot::Deserialize({}), std::invalid_argument);
 
-    const GameSnapshot original{{MakeShip()}, 1U};
+    const GameSnapshot original{{MakeShip()}, {}, 1U};
     auto bytes = original.Serialize();
     bytes.pop_back();
 
@@ -148,7 +148,7 @@ TEST(GameSnapshotTest, RejectsImpossibleEntityCount) {
 }
 
 TEST(GameSnapshotTest, RejectsInvalidEntityPayload) {
-    auto bytes = GameSnapshot{{MakeShip()}, 0U}.Serialize();
+    auto bytes = GameSnapshot{{MakeShip()}, {}, 0U}.Serialize();
     ASSERT_GT(bytes.size(), 16U);
     bytes[16] ^= 0xFF;
 
@@ -156,7 +156,7 @@ TEST(GameSnapshotTest, RejectsInvalidEntityPayload) {
 }
 
 TEST(GameSnapshotTest, RejectsTrailingBytes) {
-    auto bytes = GameSnapshot{{}, 0U}.Serialize();
+    auto bytes = GameSnapshot{{}, {}, 0U}.Serialize();
     bytes.push_back(0);
 
     EXPECT_THROW((void)GameSnapshot::Deserialize(bytes), std::invalid_argument);

@@ -118,7 +118,7 @@ GameSnapshot GameSnapshot::Deserialize(const std::vector<std::uint8_t>& buffer) 
     }
 
     reader.requireEnd();
-    return GameSnapshot{std::move(snapshots), tick_number};
+    return snapshot::GameSnapshot(std::move(snapshots), {}, tick_number);
 }
 
 }  // namespace snapshot

@@ -2,13 +2,13 @@
 
 namespace client {
 
-void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& /*snapshot*/, types::EntityId my_player_id) {
-    // Разобрать снимок и обновить entities_.
+void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& game_snapshot, types::EntityId my_player_id) {
     my_player_id_ = my_player_id;
+    leaderboard_ = game_snapshot.getLeaderboard();
 }
 
 bool ClientWorld::isMyPlayerAlive() const {
-    // Вернуть true, если my_player_id_ есть в entities_.
     return false;
 }
+
 }  // namespace client
