@@ -399,8 +399,8 @@ private:
     std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
     math::Scalar world_width_{world::kDefaultWidth};                           ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};                         ///< Высота мира
-    std::atomic<State> state_{State::Stopped};                     ///< Состояние жизненного цикла игрового цикла
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;  ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;                       ///< Защита last_snapshot_
-    boost::signals2::scoped_connection sub_disconnect_;            ///< Подписка на ClientDisconnectedEvent
+    std::atomic<State> state_{State::Stopped};                                 ///< Состояние жизненного цикла игрового цикла
+    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;              ///< Последний снимок мира для внешних читателей
+    mutable std::mutex last_snapshot_mutex_;                                   ///< Защита last_snapshot_
+    boost::signals2::scoped_connection sub_disconnect_;                        ///< Подписка на ClientDisconnectedEvent
 };
