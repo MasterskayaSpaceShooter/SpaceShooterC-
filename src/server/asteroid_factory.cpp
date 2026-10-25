@@ -24,11 +24,9 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
         return;
 
     // create_random_asteroids
-    std::vector<AsteroidData> asteroids;
-    asteroids.reserve(rand_positions.size());
     for (size_t i = 0; i < free_weight.size(); ++i) {
         domain::Entity* entity = entity_pool_.acquire();
-        entity->type = domain::EntityType::Asteroid;
+        entity->type = types::EntityType::Asteroid;
         entity->mass = free_weight[i];
         entity->radius = free_weight[i] < 30.0 ? free_weight[i] * 5.0 : free_weight[i] * 2.5;
         entity->transform.emplace();
@@ -36,8 +34,7 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
         entity->asteroid->score_reward = static_cast<uint16_t>(free_weight[i]);
         entity->transform->position = rand_positions[i];
 
-        asteroids.push_back({.entity = entity, .mass = free_weight[i]});
-        AsteroidData asteroid{entity};
+        AsteroidData asteroid{entity, free_weight[i]};
 
         asteroids_->insert({entity->id, asteroid});
         asteroids_weight_ += entity->mass;
@@ -45,7 +42,7 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
 }
 
 // this method must call before the update method
-void AsteroidFactory::onDestroyed(const std::vector<snapshot::EntityId>& asteroidsToBeDestroyed) {
+void AsteroidFactory::onDestroyed(const std::vector<types::EntityId>& asteroidsToBeDestroyed) {
     if (asteroidsToBeDestroyed.empty()) {
         return;
     }
@@ -65,8 +62,8 @@ void AsteroidFactory::onDestroyed(const std::vector<snapshot::EntityId>& asteroi
     return AsteroidFactory::AsteroidData();
 }*/
 
-std::vector<AsteroidData> AsteroidFactory::createSplitSteroid(const AsteroidData& parent) {
-    std::vector<AsteroidFactory::AsteroidData> new_asteroids;
+std::vector<AsteroidData> AsteroidFactory::createSplitSteroid([[maybe_unused]] const AsteroidData& parent) {
+    return {};
 }
 
 std::vector<double> AsteroidFactory::generateAsteroidWeight() {

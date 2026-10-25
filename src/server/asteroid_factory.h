@@ -7,6 +7,7 @@
 
 #include "entity_pool.h"
 #include "math_utils.h"
+#include "types.h"
 
 namespace asteroid_factory {
 constexpr double MIN_ASTEROIDS_WEIGHT = 500.0;
@@ -18,7 +19,7 @@ struct AsteroidData {
     math::Scalar mass;
 };
 
-using AsteroidInfoPtr = std::shared_ptr<std::unordered_map<snapshot::EntityId, AsteroidData>>;
+using AsteroidInfoPtr = std::shared_ptr<std::unordered_map<types::EntityId, AsteroidData>>;
 
 class AsteroidFactory {
 public:
@@ -26,7 +27,7 @@ public:
 
     AsteroidFactory(AsteroidInfoPtr asteroids);
     void update(const std::vector<math::Vector2D>& free_coordinates);
-    void onDestroyed(const std::vector<snapshot::EntityId>& asteroidsToBeDestroyed);
+    void onDestroyed(const std::vector<types::EntityId>& asteroidsToBeDestroyed);
     // AsteroidData createRandomAsteroid(const math::Vector2D& coordinate) const;
     std::vector<AsteroidData> createSplitSteroid(const AsteroidData& parent);
     std::vector<double> generateAsteroidWeight();

@@ -16,8 +16,8 @@ int main() {
         network::FrameCodec frame_codec;
         auto router = NetworkResponseRouter::create(event_bus);
         auto server = std::make_shared<TcpServer>(nc.getContext(), 8080, event_bus, frame_codec);
-        auto asteroids = std::make_shared<std::unordered_map<snapshot::EntityId, asteroid_factory::AsteroidData>>();
-        asteroid_factory::AsteroidFactory af(/*asteroids*/);
+        auto asteroids = std::make_shared<std::unordered_map<types::EntityId, asteroid_factory::AsteroidData>>();
+        asteroid_factory::AsteroidFactory af(asteroids);
 
         auto world = WorldInstance::create(nc.getContext(), event_bus);
         nc.start();
