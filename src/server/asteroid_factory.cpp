@@ -15,12 +15,14 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
     }
     // generate_weight
     std::vector<double> free_weight = generateAsteroidWeight();
-    if (free_coordinates.empty()) return;
+    if (free_coordinates.empty())
+        return;
 
     // generate_positions
     std::vector<math::Vector2D> rand_positions = generatePositions(free_weight.size(), free_coordinates);
-    if (free_weight.empty()) return;
-    
+    if (free_weight.empty())
+        return;
+
     // create_random_asteroids
     std::vector<AsteroidData> asteroids;
     asteroids.reserve(rand_positions.size());
@@ -42,7 +44,7 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
     }
 }
 
-//this method must call before the update method
+// this method must call before the update method
 void AsteroidFactory::onDestroyed(const std::vector<snapshot::EntityId>& asteroidsToBeDestroyed) {
     if (asteroidsToBeDestroyed.empty()) {
         return;
@@ -90,7 +92,8 @@ std::vector<double> AsteroidFactory::generateAsteroidWeight() {
 
 std::vector<math::Vector2D> AsteroidFactory::generatePositions(const size_t pos_count,
                                                                const std::vector<math::Vector2D>& free_coordinates) {
-    if (pos_count == 0 || free_coordinates.empty()) return {};
+    if (pos_count == 0 || free_coordinates.empty())
+        return {};
     std::vector<math::Vector2D> positions;
     positions.reserve(pos_count);
     std::uniform_int_distribution<size_t> distrib(0, free_coordinates.size() - 1);
