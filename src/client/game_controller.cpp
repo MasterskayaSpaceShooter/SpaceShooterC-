@@ -209,4 +209,33 @@ bool GameController::validatePlayerName(const std::string& name) {
     return true;
 }
 
+void GameController::shoot() {
+    auto self = weak_from_this().lock();
+    if (!self)
+        return;
+    boost::asio::post(strand_, [self] {
+        self->doShoot();
+    });
+}
+
+void GameController::doShoot() {
+    // strand-only
+    if (state_.load() != ClientState::InGame) {
+        return;
+    }
+
+    if (!world_.isMyPlayerAlive()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (has_shot_ && (now - last_shot_time_) < kShootCooldown) {
+        return;
+    }
+    last_shot_time_ = now;
+    has_shot_ = true;
+    static const std::vector<std::uint8_t> kShootWire{'S', 'H', 'O', 'O', 'T'};
+    tcp_->send(kShootWire);
+}
+
 }  // namespace client

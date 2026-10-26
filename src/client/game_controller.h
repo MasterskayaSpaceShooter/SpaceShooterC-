@@ -3,6 +3,7 @@
 #include <atomic>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "client_state.h"
+#include "client_world.h"
 #include "tcp_client.h"
 
 namespace client {
@@ -65,6 +67,8 @@ namespace client {
  */
 class GameController : public std::enable_shared_from_this<GameController> {
 public:
+    static constexpr std::chrono::milliseconds kShootCooldown{50};
+
     using TcpClientPtr = std::shared_ptr<TcpClient>;
 
     /**
@@ -106,6 +110,7 @@ public:
     /// @brief Lock-free snapshot of the client state. Safe from any thread.
     [[nodiscard]] ClientState state() const noexcept;
 
+<<<<<<< HEAD
     /**
      * @brief Ends the current session and starts a fresh one.
      *
@@ -130,6 +135,9 @@ public:
      * fails and the client is Disconnected.
      */
     void rejoin(std::string host, std::uint16_t port, std::string playerName);
+=======
+    void shoot();
+>>>>>>> 8b2b370 (add-shoot-in-GameController)
 
 protected:
     GameController(TcpClientPtr tcp, boost::asio::io_context& io) :
@@ -181,6 +189,7 @@ private:
      */
     void setState(ClientState next) noexcept;
 
+<<<<<<< HEAD
     /**
      * @brief Validates playerName against the wire-protocol requirements
      *        of "JOIN <name>": non-empty, and no character <= 0x20 or
@@ -189,6 +198,9 @@ private:
      *        before the strand post.
      */
     static bool validatePlayerName(const std::string& name);
+=======
+    void doShoot();
+>>>>>>> 8b2b370 (add-shoot-in-GameController)
 
     TcpClientPtr tcp_;
 
@@ -207,6 +219,12 @@ private:
 
     /// Touched only from strand_ (doStart writes, sendJoin reads).
     std::string playerName_;
+
+    ClientWorld world_;
+
+    std::chrono::steady_clock::time_point last_shot_time_{};
+
+    bool has_shot_{false};
 };
 
 }  // namespace client
