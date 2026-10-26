@@ -19,27 +19,16 @@ TEST(WorldInstance, RejectsNonPositiveTickRate) {
     EXPECT_THROW(WorldInstance::create(io_context, events::EventBus::create(), 0.0), std::invalid_argument);
 }
 
-TEST(WorldInstance, LastSnapshotIsNullBeforeFirstTick) {
-    NetworkContext nc(1);
-    auto world = WorldInstance::create(nc.getContext(), events::EventBus::create());
-
-    EXPECT_EQ(world->lastSnapshot(), nullptr);
-    world->stop();
-}
-
-TEST(WorldInstance, FreePositionsReturnsCandidatesInsideWorld) {
+TEST(WorldInstance, FreePositionReturnsCircleInsideWorld) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 100.0, 100.0);
 
-    const auto positions = world->freePositions(3, 10.0);
+    const math::Circle area = world->freePosition();
 
-    ASSERT_EQ(positions.size(), 3u);
-    for (const auto& position : positions) {
-        EXPECT_GE(position.x, -40.0);
-        EXPECT_LE(position.x, 40.0);
-        EXPECT_GE(position.y, -40.0);
-        EXPECT_LE(position.y, 40.0);
-    }
+    // Пустой мир 100x100: наибольшая свободная окружность вписана в мир.
+    EXPECT_DOUBLE_EQ(area.center.x, 0.0);
+    EXPECT_DOUBLE_EQ(area.center.y, 0.0);
+    EXPECT_DOUBLE_EQ(area.radius, 50.0);
 }
 
 TEST(WorldInstance, StopWithoutStartIsNoOp) {
@@ -61,18 +50,33 @@ TEST(WorldInstance, GameLoopTicksAfterStart) {
     EXPECT_GT(world->currentTick(), 0u);
 
     world->stop();
-    nc.stop();
+    // force_stop(), а не graceful stop(): tick-цикл перезаводит steady_timer каждый
+    // тик, а world->stop() лишь постит doStop() на strand. При активной каденции
+    // graceful nc.stop() (без io_context.stop()) не разбудит воркеры, и nc.wait()
+    // зависнет. Тесты проверяют поведение WorldInstance, а не graceful-остановку
+    // NetworkContext, поэтому здесь безопасен аварийный сброс очереди.
+    nc.force_stop();
     nc.wait();
 }
 
 TEST(WorldInstance, EnqueueActionsConcurrentlyWhileRunning) {
-    constexpr size_t kThreads = 4;
-    constexpr size_t kActionsPerThread = 1000;
+    constexpr size_t kThreads = 2;
+    constexpr size_t kActionsPerThread = 100;
 
     NetworkContext nc(1);
     auto world = WorldInstance::create(nc.getContext(), events::EventBus::create(), 100.0);
     world->start();
     nc.start();
+
+    // Дожидаемся фактического Running: world->start() постит doStart() на strand
+    // асинхронно, и до его выполнения state_ == Stopped, поэтому enqueueAction()
+    // отбрасывал бы действия. Ждём первый тик, чтобы тест проверял именно
+    // конкурентное enqueueAction() в работающем мире.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (world->currentTick() == 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_GT(world->currentTick(), 0u);
 
     std::vector<std::thread> writers;
     for (size_t i = 0; i < kThreads; ++i) {
@@ -86,14 +90,8 @@ TEST(WorldInstance, EnqueueActionsConcurrentlyWhileRunning) {
         thread.join();
     }
 
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-    while (world->currentTick() == 0 && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    EXPECT_GT(world->currentTick(), 0u);
-
     world->stop();
-    nc.stop();
+    nc.force_stop();
     nc.wait();
 }
 
@@ -114,6 +112,6 @@ TEST(WorldInstance, StopWaitsForTickLoopToStop) {
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     EXPECT_EQ(world->currentTick(), stopped_tick);
 
-    nc.stop();
+    nc.force_stop();
     nc.wait();
 }

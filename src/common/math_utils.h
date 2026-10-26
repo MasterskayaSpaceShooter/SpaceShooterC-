@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
+#include <vector>
 
 #include "logger.h"
 
@@ -15,6 +16,9 @@ constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
 constexpr double kEps = 1e-12;
 constexpr Scalar kWorldHeight = 2000.0;
 constexpr Scalar kWorldWidth = 2000.0;
+/// Малый зазор, отнимаемый от радиуса свободной окружности, чтобы она
+/// гарантированно не касалась занятых кругов (строгая непересекаемость).
+constexpr Scalar kFreeCircleMargin = 1e-6;
 
 struct Vector2D {
     Scalar x = 0;
@@ -57,6 +61,12 @@ struct Vector2D {
     /// Единичный вектор того же направления.
     /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
+};
+
+/// Окружность на плоскости: центр и радиус.
+struct Circle {
+    Vector2D center;
+    Scalar radius = 0.0;
 };
 
 /// Wraps an angle in radians into (-pi, pi]; exactly -pi folds to +pi.
@@ -157,6 +167,113 @@ inline void updateShipPhysics(Vector2D& position,
 // принимаются строго как double (Scalar); int/float и т.п. — ошибка компиляции.
 template <typename T1, typename T2>
 Vector2D clampToWorldBounds(const Vector2D&, T1, T2) = delete;
+
+/// Возвращает одну из достаточно больших свободных окружностей целиком лежащую внутри прямоугольника
+/// [-world_width/2, world_width/2] x [-world_height/2, world_height/2] и не
+/// пересекающуюся и не касающуюся ни одного «занятого» круга.
+///
+/// Входные круги описываются парами (center, radius), где radius >= 0.
+/// Свободная окружность радиуса R с центром C допустима, если:
+///   |C.x| + R <= world_width/2   и   |C.y| + R <= world_height/2
+///   и для каждого занятого круга: |C - center_i| >= R + radius_i  (без касания).
+///
+/// Кандидаты в центр наибольшей пустой окружности — это вершины аддитивно-взвешенной
+/// диаграммы Вороного занятых кругов и границ мира:
+///   - вершина на прямой между каждой парой центров (учёт разных радиусов),
+///   - оптимальная точка на каждом ребре мира, равноудалённая от ребра и от каждого
+///     круга (перпендикуляр из центра круга к ребру),
+///   - центр мира как запасной кандидат.
+/// Для каждого кандидата вычисляется максимально допустимый радиус, выбирается максимум;
+/// при равенстве радиусов отдаётся центр ближе к началу координат.
+/// Итоговый радиус уменьшается на kFreeCircleMargin, чтобы окружность гарантированно
+/// не касалась сущностей (строгая непересекаемость).
+///
+/// \pre world_width > 0, world_height > 0; все radii >= 0
+/// \return Окружность максимального радиуса; при отсутствии занятых кругов — вписанная
+///         в мир окружность с центром в (0,0).
+[[nodiscard]] inline Circle largestEmptyCircle(const std::vector<std::pair<Vector2D, Scalar>>& occupied,
+                                               Scalar world_width,
+                                               Scalar world_height) {
+    const Scalar half_w = world_width * static_cast<Scalar>(0.5);
+    const Scalar half_h = world_height * static_cast<Scalar>(0.5);
+
+    // Для данного центра — радиус наибольшей свободной окружности.
+    const auto maxRadiusAt = [&](const Vector2D& center) {
+        Scalar r = std::min(half_w - std::fabs(center.x), half_h - std::fabs(center.y));
+        for (const auto& [pos, rad] : occupied) {
+            const Scalar d = (center - pos).length() - rad;
+            if (d < r) {
+                r = d;
+            }
+        }
+        return std::max(r, static_cast<Scalar>(0.0));
+    };
+
+    // Пустой мир: вписанная в мир окружность.
+    if (occupied.empty()) {
+        return Circle{Vector2D{0.0, 0.0}, std::min(half_w, half_h)};
+    }
+
+    Circle best{Vector2D{0.0, 0.0}, -1.0};
+
+    const auto consider = [&](const Vector2D& center) {
+        const Scalar r = maxRadiusAt(center);
+        if (r > best.radius + kEps ||
+            (std::fabs(r - best.radius) <= kEps && center.lengthSquared() < best.center.lengthSquared())) {
+            best = Circle{center, r};
+        }
+    };
+
+    for (std::size_t i = 0; i < occupied.size(); ++i) {
+        const auto& [pa, ra] = occupied[i];
+
+        // Вершины Вороного вдоль линии пар центров (учёт разных радиусов).
+        for (std::size_t j = i + 1; j < occupied.size(); ++j) {
+            const auto& [pb, rb] = occupied[j];
+            const Vector2D delta = pb - pa;
+            const Scalar dist = delta.length();
+            if (dist < kEps) {
+                continue;
+            }
+            const Vector2D dir = delta * (1.0 / dist);
+
+            // Внутренняя вершина: |C - A| - ra = |C - B| - rb,
+            // причём |C - A| + |C - B| = dist => |C - A| = (dist + ra - rb)/2.
+            const Scalar t = (dist + ra - rb) * static_cast<Scalar>(0.5);
+            if (t >= 0.0 && t <= dist) {
+                consider(pa + dir * t);
+            }
+
+            // Внешние вершины за пределами отрезка AB.
+            consider(pa - dir * ra);
+            consider(pb + dir * rb);
+        }
+
+        // Оптимум «круг против каждого ребра мира»: точка на перпендикуляре из центра
+        // круга к ребру, равноудалённая от ребра и от круга. Здесь R = (зазор - ra)/2,
+        // а центр лежит на расстоянии R + ra от центра круга в сторону ребра.
+        // Правое ребро (x = +half_w).
+        consider(Vector2D{pa.x + ((half_w - pa.x + ra) * static_cast<Scalar>(0.5)), pa.y});
+        // Левое ребро (x = -half_w).
+        consider(Vector2D{pa.x - ((half_w + pa.x + ra) * static_cast<Scalar>(0.5)), pa.y});
+        // Верхнее ребро (y = +half_h).
+        consider(Vector2D{pa.x, pa.y + ((half_h - pa.y + ra) * static_cast<Scalar>(0.5))});
+        // Нижнее ребро (y = -half_h).
+        consider(Vector2D{pa.x, pa.y - ((half_h + pa.y + ra) * static_cast<Scalar>(0.5))});
+    }
+
+    // Запасной кандидат — центр мира.
+    consider(Vector2D{0.0, 0.0});
+
+    if (best.radius < 0.0) {
+        best = Circle{Vector2D{0.0, 0.0}, 0.0};
+    }
+
+    // Гарантия строгой непересекаемости: отступаем от касания на малый зазор,
+    // чтобы окружность не соприкасалась с сущностями.
+    best.radius = std::max(static_cast<Scalar>(0.0), best.radius - kFreeCircleMargin);
+    return best;
+}
 
 namespace collision {
 

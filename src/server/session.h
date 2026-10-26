@@ -3,7 +3,6 @@
 #include <boost/asio.hpp>
 #include <boost/beast/core/flat_buffer.hpp>
 #include <memory>
-#include <mutex>
 #include <queue>
 #include <vector>
 

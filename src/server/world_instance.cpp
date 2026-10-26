@@ -12,6 +12,22 @@
 #include "logger.h"
 #include "network_response_router.h"
 
+namespace {
+
+/// Живые сущности: слот занят, не isDestroyed, есть transform и положительный радиус.
+std::vector<const domain::Entity*> collectLiveEntities(const domain::EntityPool& pool) {
+    std::vector<const domain::Entity*> result;
+    for (const auto& slot : pool.storage()) {
+        if (!pool.isActive(slot) || !slot->transform.has_value() || slot->radius <= 0.0) {
+            continue;
+        }
+        result.push_back(&*slot);
+    }
+    return result;
+}
+
+}  // namespace
+
 std::shared_ptr<WorldInstance> WorldInstance::create(boost::asio::io_context& io_context,
                                                      std::shared_ptr<events::EventBus> event_bus,
                                                      double tick_rate_hz,
@@ -72,6 +88,20 @@ void WorldInstance::start() {
 }
 
 void WorldInstance::stop() {
+    // Немедленно и детерминированно останавливаем каденцию тиков в вызывающем
+    // потоке: это не даёт scheduleNextTick() перезавести таймер до того, как
+    // doStop() доберётся до отмены. Если полагаться только на post(doStop),
+    // возможна гонка: doTick() успевает перезавести async_wait (state ещё Running),
+    // и io_context.run()/wait() никогда не завершается (зависание).
+    state_.store(State::Stopped, std::memory_order_relaxed);
+    boost::system::error_code cancel_error;
+    tick_timer_.cancel(cancel_error);
+    if (cancel_error) {
+        LOG_ERROR("[WorldInstance] stop: timer cancel failed: {}", cancel_error.message());
+    }
+
+    // Очистку очереди и session bookkeeping выполняем на strand (как и раньше),
+    // но остановка каденции выше уже состоялась и от неё не зависит.
     boost::asio::post(tick_strand_, [self = shared_from_this()] {
         self->doStop();
     });
@@ -104,11 +134,9 @@ void WorldInstance::doStart() {
 
 void WorldInstance::doStop() {
     try {
-        State expected{State::Running};
-        if (!state_.compare_exchange_strong(expected, State::Stopped)) {
-            return;
-        }
-
+        // state_ уже переведён в Stopped в stop() (синхронно). Здесь выполняем
+        // только очистку, которая должна идти на strand: shutdownTickLoop()
+        // отменяет таймер и дренирует очередь.
         LOG_INFO("[WorldInstance] stop");
         shutdownTickLoop();
     } catch (const std::exception& e) {
@@ -194,10 +222,6 @@ void WorldInstance::runTickStep() {
         spawnShips(new_players);
 
         auto snapshot = buildGameSnapshot();
-        {
-            std::lock_guard lock(last_snapshot_mutex_);
-            last_snapshot_ = std::make_shared<snapshot::GameSnapshot>(std::move(snapshot));
-        }
         // Приветственный снимок текущего тика (с кораблями новичков) доставляет
         // новому игроку broadcast: сессии регистрируются в SessionRegistry при
         // подключении (tcp_server.cpp), поэтому персональная рассылка по
@@ -238,52 +262,16 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
     return current_tick_.load();
 }
 
-std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
-    std::lock_guard lock(last_snapshot_mutex_);
-    return last_snapshot_;
-}
+math::Circle WorldInstance::freePosition() const {
+    const auto entities = collectLiveEntities(entities_);
 
-std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
-    if (count == 0) {
-        return {};
-    }
-    if (!std::isfinite(clearance) || clearance < 0.0) {
-        throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
+    std::vector<std::pair<math::Vector2D, math::Scalar>> occupied;
+    occupied.reserve(entities.size());
+    for (const auto* e : entities) {
+        occupied.emplace_back(e->transform->position, e->radius);
     }
 
-    const auto half_width = world_width_ * 0.5;
-    const auto half_height = world_height_ * 0.5;
-    if (clearance > half_width || clearance > half_height) {
-        return {};
-    }
-
-    std::vector<math::Vector2D> positions;
-    const auto spacing = std::max(2.0 * clearance, 1.0);
-    const auto min_x = -half_width + clearance;
-    const auto max_x = half_width - clearance;
-    const auto min_y = -half_height + clearance;
-    const auto max_y = half_height - clearance;
-
-    std::shared_lock entities_lock(entities_mutex_);
-    for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
-        for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
-            const math::Vector2D candidate{x, y};
-            const auto overlaps = std::any_of(entities_.storage().begin(),
-                                              entities_.storage().end(),
-                                              [&candidate, clearance](const auto& slot) {
-                                                  if (!slot || slot->isDestroyed || !slot->transform) {
-                                                      return false;
-                                                  }
-                                                  const auto combined_radius = clearance + slot->radius;
-                                                  return (candidate - slot->transform->position).lengthSquared() <=
-                                                         combined_radius * combined_radius;
-                                              });
-            if (!overlaps) {
-                positions.push_back(candidate);
-            }
-        }
-    }
-    return positions;
+    return math::largestEmptyCircle(occupied, world_width_, world_height_);
 }
 
 void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
@@ -327,15 +315,30 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
         return;
     }
 
-    // TODO: использовать freePositions(), когда появится реализация; пока
-    // все корабли спавнятся в центре мира ({0, 0}) — свободная от объектов
-    // область будет гарантироваться поиском на регулярной сетке.
+    // СПАВН В СВОБОДНОЙ ОБЛАСТИ:
+    // Каждый корабль размещается в центре наибольшей свободной окружности поля
+    // (freePosition()), не пересекаясь и не касаясь живых сущностей.
+    //
+    // Порядок критичен при спавне нескольких сущностей за тик:
+    // freePosition() читает entities_ и считает «занятой» любую сущность с заполненным
+    // transform и радиусом > 0. Поэтому freePosition() вызывается перед КАЖДЫМ acquire(),
+    // а transform/radius нового корабля заполняются сразу после acquire() — так следующий
+    // новичок получит заново пересчитанную «самую разряженную» область, а не ту же точку.
     for (const auto& join : new_players) {
+        const math::Circle area = freePosition();  // <— до acquire()
+        if (area.radius < world::kShipDefaultRadius) {
+            LOG_WARN("[WorldInstance] spawn: crowded world, free radius {:.3f} < ship radius {:.3f}",
+                     area.radius,
+                     world::kShipDefaultRadius);
+        }
+
         auto* entity = entities_.acquire();
         entity->type = types::EntityType::Ship;
         entity->mass = world::kShipDefaultMass;
         entity->radius = world::kShipDefaultRadius;
-        entity->transform = domain::TransformComponent{{0.0, 0.0}, {0.0, 0.0}, 0.0};
+        // transform/radius заполняются сразу, чтобы freePosition() на следующей
+        // итерации учитывал этот корабль как занятый.
+        entity->transform = domain::TransformComponent{area.center, {0.0, 0.0}, 0.0};
 
         domain::ShipComponent ship;
         ship.name.fill('\0');
