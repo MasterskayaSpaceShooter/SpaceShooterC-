@@ -328,17 +328,17 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                         if (action.is_shooting) {
                             auto bullet = entities_.acquire();
                             bullet->type = types::EntityType::Bullet;
-                            bullet->radius = 5.0;
+                            bullet->radius = world::kBulletRadius;
                             bullet->transform = domain::TransformComponent{};
                             bullet->combat = domain::CombatComponent{};
 
                             auto angle = ship_angle;
                             math::Vector2D direction{std::cos(angle), std::sin(angle)};
                             bullet->transform->position = ship_position + (direction * ship_radius);
-                            bullet->transform->velocity = direction * 500.0;
+                            bullet->transform->velocity = direction * world::kBulletSpeed;
 
                             bullet->combat->owner_id = ship_id;
-                            bullet->combat->damage = 25;
+                            bullet->combat->damage = world::kBulletDamage;
                         }
                     }
                 }
