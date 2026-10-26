@@ -117,8 +117,17 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    std::shared_ptr<events::EventBus> event_bus_;  ///< Владение шиной событий сервера
-    mutable std::shared_mutex message_handler_mutex_;  ///< Защита message_handler_ от гонок чтения/записи
-    MessageHandler message_handler_;  ///< Колбэк передатчик пакетов во внешние системы
+    /**
+     * @brief Обработчик входящей команды SHOOT от клиента.
+     * @details Публикует ShotHappenedEvent в EventBus для игровых систем.
+     *          Стрелок определяется по event.session_id.
+     * @param event Входные данные: Структура события ShotMessageEvent.
+     * @outputs Выходных значений нет.
+     */
+    void onShotReceived(const ShotMessageEvent& event);
+
+    std::shared_ptr<events::EventBus> event_bus_;                    ///< Владение шиной событий сервера
+    mutable std::shared_mutex message_handler_mutex_;                ///< Защита message_handler_ от гонок чтения/записи
+    MessageHandler message_handler_;                                 ///< Колбэк передатчик пакетов во внешние системы
     std::vector<boost::signals2::scoped_connection> subscriptions_;  ///< Активные подписки на события шины
 };

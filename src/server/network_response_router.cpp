@@ -25,6 +25,12 @@ void NetworkResponseRouter::setMessageHandler(MessageHandler handler) {
 }
 
 void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) {
+    const std::string_view msg(reinterpret_cast<const char*>(event.payload.data()), event.payload.size());
+
+    if (msg == "SHOOT") {
+        event_bus_->publish(ShotMessageEvent{event.session_id});
+        return;
+    }
     MessageHandler handler;
     {
         std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);
@@ -43,6 +49,11 @@ void NetworkResponseRouter::onClientConnected(const ClientConnectedEvent& event)
 
 void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& event) {
     LOG_INFO("[NetworkResponseRouter] Клиент отключен: session_id={}", event.session_id);
+}
+
+void NetworkResponseRouter::onShotReceived(const ShotMessageEvent& event) {
+    LOG_INFO("[NetworkResponseRouter] Получен SHOOT от session_id={}", event.session_id);
+    event_bus_->publish(ShotHappenedEvent{event.session_id});
 }
 
 void NetworkResponseRouter::setupSubscriptions() {
@@ -69,6 +80,12 @@ void NetworkResponseRouter::setupSubscriptions() {
                 s->onClientDisconnected(event);
             }
         }));
+
+    subscriptions_.emplace_back(event_bus_->subscribe<ShotMessageEvent>([self](const ShotMessageEvent& event) {
+        if (auto s = self.lock()) {
+            s->onShotReceived(event);
+        }
+    }));
 }
 
 void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {
