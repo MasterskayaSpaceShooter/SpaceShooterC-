@@ -56,33 +56,34 @@ namespace domain {
 }
 
 /**
- * @brief Строит снимки всех живых сущностей из пула.
- * @details Пустые слоты и сущности с флагом isDestroyed пропускаются
- *          (см. EntityPool::isActive). Память резервируется ровно под
- *          число активных сущностей, а не под размер хранилища-пула.
+ * @brief Заполняет буфер снимками всех живых сущностей из пула.
+ * @details Пустые слоты, сущности с флагом isDestroyed и типом EntityType::None
+ *          пропускаются (см. EntityPool::isActive). Ёмкость буфера переиспользуется
+ *          между вызовами (например, между тиками), чтобы не аллоцировать вектор
+ *          на каждый кадр. Верхняя граница числа снимков берётся из
+ *          EntityPool::activeCount() (O(1), без прохода по хранилищу).
  * @param pool Входные данные: Пул сущностей.
- * @return std::vector<snapshot::EntitySnapshot> Снимки сущностей.
+ * @param out_snapshots Входные данные: Буфер для снимков, переиспользуется между вызовами.
+ * @return std::size_t Число записанных снимков (размер буфера после вызова).
+ * @pre Не потокобезопасна. Вызов не содержит внутренней синхронизации: читает
+ *      pool и мутирует out_snapshots напрямую. Доступ к обоим аргументам должен
+ *      быть сериализован между потоками вызывающим кодом (в проекте это
+ *      обеспечивает tick_strand_ WorldInstance). Чтение пула небезопасно при
+ *      конкурентном EntityPool::acquire(), EntityPool::recycleDestroyed() или
+ *      прямой записи в EntityPool::storage().
  */
-[[nodiscard]] inline std::vector<snapshot::EntitySnapshot> buildEntitySnapshots(const EntityPool& pool) {
+inline std::size_t buildEntitySnapshots(const EntityPool& pool, std::vector<snapshot::EntitySnapshot>& out_snapshots) {
+    out_snapshots.clear();
+    out_snapshots.reserve(pool.activeCount());
+
     const auto& storage = pool.storage();
-
-    std::size_t active_count = 0;
     for (const auto& slot : storage) {
         if (pool.isActive(slot)) {
-            ++active_count;
+            out_snapshots.push_back(toEntitySnapshot(*slot));
         }
     }
 
-    std::vector<snapshot::EntitySnapshot> snapshots;
-    snapshots.reserve(active_count);
-
-    for (const auto& slot : storage) {
-        if (pool.isActive(slot)) {
-            snapshots.push_back(toEntitySnapshot(*slot));
-        }
-    }
-
-    return snapshots;
+    return out_snapshots.size();
 }
 
 /**

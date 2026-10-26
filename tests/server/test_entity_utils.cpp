@@ -120,11 +120,13 @@ TEST(BuildEntitySnapshots, SkipsEmptySlotsAndDestroyedEntities) {
     storage.emplace_back(destroyed);
     storage.emplace_back(MakeAsteroid(EntityId{3}));
 
-    const auto snapshots = domain::buildEntitySnapshots(pool);
+    std::vector<snapshot::EntitySnapshot> buffer;
+    const auto count = domain::buildEntitySnapshots(pool, buffer);
 
-    ASSERT_EQ(snapshots.size(), 2U);
-    EXPECT_EQ(snapshots[0].id, EntityId{1});
-    EXPECT_EQ(snapshots[1].id, EntityId{3});
+    ASSERT_EQ(count, 2U);
+    ASSERT_EQ(buffer.size(), 2U);
+    EXPECT_EQ(buffer[0].id, EntityId{1});
+    EXPECT_EQ(buffer[1].id, EntityId{3});
 }
 
 TEST(BuildEntitySnapshots, WorksWithEntityPoolStorage) {
@@ -137,16 +139,21 @@ TEST(BuildEntitySnapshots, WorksWithEntityPoolStorage) {
     *destroyed = MakeAsteroid(EntityId{12});
     destroyed->isDestroyed = true;
 
-    const auto snapshots = domain::buildEntitySnapshots(pool);
+    std::vector<snapshot::EntitySnapshot> buffer;
+    const auto count = domain::buildEntitySnapshots(pool, buffer);
 
-    ASSERT_EQ(snapshots.size(), 2U);
-    EXPECT_EQ(snapshots[0].id, EntityId{10});
-    EXPECT_EQ(snapshots[1].id, EntityId{11});
+    ASSERT_EQ(count, 2U);
+    ASSERT_EQ(buffer.size(), 2U);
+    EXPECT_EQ(buffer[0].id, EntityId{10});
+    EXPECT_EQ(buffer[1].id, EntityId{11});
 }
 
 TEST(BuildEntitySnapshots, EmptyStorageYieldsEmptyVector) {
     domain::EntityPool pool;
-    EXPECT_TRUE(domain::buildEntitySnapshots(pool).empty());
+    std::vector<snapshot::EntitySnapshot> buffer;
+    const auto count = domain::buildEntitySnapshots(pool, buffer);
+    EXPECT_EQ(count, 0U);
+    EXPECT_TRUE(buffer.empty());
 }
 
 TEST(BuildEntitySnapshots, SkipsSlotWithNoneType) {
@@ -156,10 +163,55 @@ TEST(BuildEntitySnapshots, SkipsSlotWithNoneType) {
     auto* ship = pool.acquire();
     *ship = MakeShip(EntityId{5});
 
-    const auto snapshots = domain::buildEntitySnapshots(pool);
+    std::vector<snapshot::EntitySnapshot> buffer;
+    const auto count = domain::buildEntitySnapshots(pool, buffer);
 
-    ASSERT_EQ(snapshots.size(), 1U);
-    EXPECT_EQ(snapshots[0].id, EntityId{5});
+    ASSERT_EQ(count, 1U);
+    ASSERT_EQ(buffer.size(), 1U);
+    EXPECT_EQ(buffer[0].id, EntityId{5});
+}
+
+TEST(EntityPoolActiveCount, CountsEngagedSlots) {
+    domain::EntityPool pool;
+    EXPECT_EQ(pool.activeCount(), 0U);
+
+    pool.acquire();
+    pool.acquire();
+    EXPECT_EQ(pool.activeCount(), 2U);
+
+    // Помеченная на удаление сущность всё ещё занимает слот до recycleDestroyed().
+    pool.acquire()->isDestroyed = true;
+    EXPECT_EQ(pool.activeCount(), 3U);
+
+    pool.recycleDestroyed();
+    EXPECT_EQ(pool.activeCount(), 2U);
+}
+
+TEST(BuildEntitySnapshots, ReusesBufferCapacityAcrossCalls) {
+    domain::EntityPool pool;
+    for (types::EntityId id{1}; id.get() <= 100; ++id) {
+        auto* e = pool.acquire();
+        *e = MakeShip(id);
+    }
+
+    std::vector<snapshot::EntitySnapshot> buffer;
+    domain::buildEntitySnapshots(pool, buffer);
+    const auto capacity = buffer.capacity();
+
+    // Уничтожаем часть сущностей и пересобираем: ёмкость буфера должна сохраниться.
+    auto& storage = pool.storage();
+    std::size_t destroyed = 0;
+    for (auto& slot : storage) {
+        if (slot && destroyed < 50) {
+            slot->isDestroyed = true;
+            ++destroyed;
+        }
+    }
+    pool.recycleDestroyed();
+
+    const auto count = domain::buildEntitySnapshots(pool, buffer);
+    ASSERT_EQ(count, 50U);
+    EXPECT_EQ(buffer.capacity(), capacity);
 }
 
 }  // namespace

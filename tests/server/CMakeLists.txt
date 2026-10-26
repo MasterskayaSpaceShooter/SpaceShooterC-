@@ -6,6 +6,7 @@ add_executable(unit_tests_server
 	test_world_instance.cpp
 	test_entity_health.cpp
 	test_entity_utils.cpp
+	test_score.cpp
 )
 
 target_link_libraries(unit_tests_server PRIVATE

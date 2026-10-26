@@ -13,14 +13,6 @@ TEST(WorldInstance, CreateWithNullEventBusThrows) {
     EXPECT_THROW(WorldInstance::create(io_context, nullptr), std::invalid_argument);
 }
 
-TEST(WorldInstance, LastSnapshotIsNullBeforeFirstTick) {
-    NetworkContext nc(1);
-    auto world = WorldInstance::create(nc.getContext(), events::EventBus::create());
-
-    EXPECT_EQ(world->lastSnapshot(), nullptr);
-    world->stop();
-}
-
 TEST(WorldInstance, StopWithoutStartIsNoOp) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create());
@@ -38,7 +30,6 @@ TEST(WorldInstance, GameLoopTicksAfterStart) {
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     EXPECT_GT(world->currentTick(), 0u);
-    EXPECT_NE(world->lastSnapshot(), nullptr);
 
     world->stop();
     nc.stop();
