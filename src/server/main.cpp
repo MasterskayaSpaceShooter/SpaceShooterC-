@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "asteroid_factory.h"
 #include "event_bus.h"
 #include "frame_codec.h"
 #include "logger.h"
@@ -7,7 +8,6 @@
 #include "network_response_router.h"
 #include "tcp_server.h"
 #include "world_instance.h"
-#include "asteroid_factory.h"
 
 int main() {
     try {
