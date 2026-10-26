@@ -298,7 +298,52 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 session_to_ship_.erase(action.session_id);
                 break;
             }
-            case ActionType::MoveAndShoot:
+            case ActionType::MoveAndShoot: {
+                /* Достаём EntityId из мапы session_to_ship_ по action.session_id. Если игрок стреляет, то берём данные
+                 * корабля из EntityPool, создаём пулю и задаём ей параметры направления. */
+                auto it = session_to_ship_.find(action.session_id);
+                if (it != session_to_ship_.end()) {
+                    auto ship_id = it->second;
+
+                    math::Vector2D ship_position;
+                    math::Scalar ship_angle;
+                    math::Scalar ship_radius;
+                    bool ship_found = false;
+                    for (auto& entity : entities_.storage()) {
+                        if (entity.has_value() && entity->id == ship_id) {
+                            if (entity->transform.has_value()) {
+                                if (action.move_direction.lengthSquared() > 0) {
+                                    // TODO: описать изменение движения, задача № ???
+                                }
+                                ship_found = true;
+                                ship_position = entity->transform->position;
+                                ship_angle = entity->transform->angle;
+                                ship_radius = entity->radius;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (ship_found) {
+                        if (action.is_shooting) {
+                            auto bullet = entities_.acquire();
+                            bullet->type = types::EntityType::Bullet;
+                            bullet->radius = 5.0;
+                            bullet->transform = domain::TransformComponent{};
+                            bullet->combat = domain::CombatComponent{};
+
+                            auto angle = ship_angle;
+                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                            bullet->transform->position = ship_position + (direction * ship_radius);
+                            bullet->transform->velocity = direction * 500.0;
+
+                            bullet->combat->owner_id = ship_id;
+                            bullet->combat->damage = 25;
+                        }
+                    }
+                }
+                break;
+            }
             case ActionType::Respawn:
             default:
                 break;
