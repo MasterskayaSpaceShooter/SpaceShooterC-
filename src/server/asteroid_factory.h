@@ -23,21 +23,19 @@ using AsteroidInfoPtr = std::shared_ptr<std::unordered_map<types::EntityId, Aste
 
 class AsteroidFactory {
 public:
-    using AsteroidData = asteroid_factory::AsteroidData;
-
-    AsteroidFactory(AsteroidInfoPtr asteroids);
+    AsteroidFactory(std::shared_ptr<domain::EntityPool> entity_pool);
     void update(const std::vector<math::Vector2D>& free_coordinates);
-    void onDestroyed(const std::vector<types::EntityId>& asteroidsToBeDestroyed);
-    // AsteroidData createRandomAsteroid(const math::Vector2D& coordinate) const;
-    std::vector<AsteroidData> createSplitSteroid(const AsteroidData& parent);
-    std::vector<double> generateAsteroidWeight();
+    std::vector<AsteroidData> createSplitAsteroid(const AsteroidData& parent);
+    std::vector<double> generateAsteroidWeight(const double current_weight);
     std::vector<math::Vector2D> generatePositions(const size_t pos_count,
                                                   const std::vector<math::Vector2D>& free_coordinates);
 
 private:
-    AsteroidInfoPtr asteroids_;
+    double calculateCurrentWeight() const;
+
+private:
     double asteroids_weight_;
-    domain::EntityPool entity_pool_;
+    std::shared_ptr<domain::EntityPool> entity_pool_;
 };
 
 }  // namespace asteroid_factory
