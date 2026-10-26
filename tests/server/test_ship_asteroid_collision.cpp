@@ -50,6 +50,33 @@ TEST(ShipAsteroidCollisionTest, EatsAsteroidBelowHalfShipMass) {
     EXPECT_EQ(ship.health->current, 80);
 }
 
+TEST(ShipAsteroidCollisionTest, GrowsShipRadiusWhenMassReachesNextLevel) {
+    auto ship = MakeShip(domain::Entity::massForRadius(domain::Entity::kInitialShipRadius));
+    ship.radius = domain::Entity::kInitialShipRadius;
+
+    for (const auto asteroid_mass : {19.0, 28.0, 40.0}) {
+        auto asteroid = MakeAsteroid(asteroid_mass);
+        domain::collision::onCollision(ship, asteroid);
+        EXPECT_TRUE(asteroid.isDestroyed);
+        EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius);
+    }
+
+    auto asteroid = MakeAsteroid(31.0);
+    domain::collision::onCollision(ship, asteroid);
+
+    EXPECT_TRUE(asteroid.isDestroyed);
+    EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius * 2.0);
+}
+
+TEST(ShipAsteroidCollisionTest, GrowsMultipleLevelsWhenMassIsAddedAtOnce) {
+    auto ship = MakeShip(domain::Entity::massForRadius(domain::Entity::kInitialShipRadius));
+    ship.radius = domain::Entity::kInitialShipRadius;
+
+    ship.addMass(10000.0);
+
+    EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius * 8.0);
+}
+
 TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageAtHalfShipMassBoundary) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(100.0);
