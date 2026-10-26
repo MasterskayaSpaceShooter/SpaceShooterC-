@@ -191,14 +191,17 @@ TEST_F(TcpClientTest, ConnectToInvalidHost) {
     std::atomic<bool> result{false};
     std::atomic<bool> callback_called{false};
 
-    client_->connect("999.999.999.999", 12345, [&result, &callback_called](bool ok) {
+    // Используем loopback с заведомо закрытым портом: подключение отклоняется
+    // мгновенно (connection refused), без DNS-резолва и без виснущих SYN-ретрансмиссий,
+    // которые могли бы заблокировать io_thread_ (в отличие от невалидного внешнего IP).
+    client_->connect("127.0.0.1", 1, [&result, &callback_called](bool ok) {
         result = ok;
         callback_called = true;
     });
 
-    waitFor([&] {
+    EXPECT_TRUE(waitFor([&] {
         return callback_called.load();
-    });
+    }));
     EXPECT_FALSE(result);
     EXPECT_FALSE(client_->isConnected());
 }
