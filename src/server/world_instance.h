@@ -16,6 +16,7 @@
 #include "math_utils.h"
 #include "network_events.h"
 #include "thread_safe_queue.h"
+#include "types.h"
 
 enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
@@ -331,6 +332,7 @@ private:
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;  ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;             ///< Защита last_snapshot_
-    boost::signals2::scoped_connection sub_disconnect_;  ///< Подписка на ClientDisconnectedEvent
+    mutable std::mutex last_snapshot_mutex_;                          ///< Защита last_snapshot_
+    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
 };
