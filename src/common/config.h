@@ -12,7 +12,6 @@ inline constexpr double kDefaultTickRateHz = 60.0;  ///< Частота тико
 inline constexpr std::int64_t kMaxMissedTicks = 1;  ///< Допустимое отставание каденции в интервалах тика
 inline constexpr math::Scalar kDefaultWidth = 2000.0;   ///< Ширина мира по умолчанию
 inline constexpr math::Scalar kDefaultHeight = 2000.0;  ///< Высота мира по умолчанию
-inline constexpr math::Scalar kDefaultClearance = 30.0;  ///< Зазор «запретной» окружности кандидата
 inline constexpr std::size_t kMaxLeaderboardSize = 10;  /// Максимальное количество записей в таблице лидеров.
 
 // Параметры корабля игрока по умолчанию.
