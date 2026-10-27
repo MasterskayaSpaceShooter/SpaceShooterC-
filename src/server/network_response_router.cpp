@@ -31,6 +31,13 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
         event_bus_->publish(ShotMessageEvent{event.session_id});
         return;
     }
+
+    if (msg.starts_with("JOIN ")) {
+        std::string player_name(msg.substr(5));
+        event_bus_->publish(PlayerJoinEvent{event.session_id, std::move(player_name)});
+        return;
+    }
+
     MessageHandler handler;
     {
         std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);
