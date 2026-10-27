@@ -39,6 +39,10 @@ inline void onCollision(Entity& ship, Entity& asteroid) {
         return;
     }
 
+    if (ship.mass <= 0 || asteroid.mass <= 0) {
+        return;
+    }
+
     const math::Scalar mass_ratio = asteroid.mass / ship.mass;
 
     // 1. Слишком мелкий астероид (<= 20% массы корабля):
