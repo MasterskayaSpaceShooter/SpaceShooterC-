@@ -44,7 +44,7 @@ TEST(Encode, Move_AllDirections) {
 }
 
 TEST(Encode, Attack_ExactWire) {
-    EXPECT_EQ(asString(protocol::encodeAttack()), "ATTACK");
+    EXPECT_EQ(asString(protocol::encodeShoot()), "SHOOT");
 }
 
 // ===========================================================================
