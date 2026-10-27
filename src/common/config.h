@@ -7,8 +7,8 @@ namespace world {
 
 // Настройки игрового мира по умолчанию
 // начало координат (0,0) - центр прямоугольника
-inline constexpr double kDefaultWidth = 2000.0;   ///< Ширина мира по умолчанию
-inline constexpr double kDefaultHeight = 2000.0;  ///< Высота мира по умолчанию
+inline constexpr double kDefaultWidth = 2000.0;
+inline constexpr double kDefaultHeight = 2000.0;
 
 inline constexpr double kDefaultTickRateHz = 60.0;  ///< Частота тиков по умолчанию (60 FPS)
 inline constexpr std::int64_t kMaxMissedTicks = 1;  ///< Допустимое отставание каденции в интервалах тика
