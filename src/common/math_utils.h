@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <config.h>
 #include <numbers>
 #include <stdexcept>
 
@@ -12,9 +13,9 @@ namespace math {
 
 using Scalar = double;
 constexpr Scalar kPi = std::numbers::pi_v<Scalar>;
-constexpr double kEps = 1e-12;
-constexpr Scalar kWorldHeight = 2000.0;
-constexpr Scalar kWorldWidth = 2000.0;
+constexpr Scalar kEps = 1e-12;
+constexpr Scalar kHalfWorldWidth = world::kDefaultWidth * 0.5;
+constexpr Scalar kHalfWorldHeight = world::kDefaultHeight * 0.5;
 
 struct Vector2D {
     Scalar x = 0;
@@ -58,6 +59,21 @@ struct Vector2D {
     /// Для вектора нулевой длины возвращается нулевой вектор.
     [[nodiscard]] Vector2D normalized() const;
 };
+
+/// Bottom-left corner: (-width/2, -height/2).
+[[nodiscard]] inline Vector2D worldMin() noexcept {
+    return {-kHalfWorldWidth, -kHalfWorldHeight};
+}
+
+/// Top-right corner: (+width/2, +height/2).
+[[nodiscard]] inline Vector2D worldMax() noexcept {
+    return {kHalfWorldWidth, kHalfWorldHeight};
+}
+
+/// Center — origin by convention.
+[[nodiscard]] inline Vector2D worldCenter() noexcept {
+    return {};
+}
 
 /// Wraps an angle in radians into (-pi, pi]; exactly -pi folds to +pi.
 /// \param angle_rad angle in radians, any magnitude
@@ -142,8 +158,8 @@ inline void updateShipPhysics(Vector2D& position,
 /// «мёртвой зоны» вблизи края и обратного притягивания.
 /// \pre world_width > 0, world_height > 0
 [[nodiscard]] inline Vector2D clampToWorldBounds(const Vector2D& position,
-                                                 Scalar world_width = kWorldWidth,
-                                                 Scalar world_height = kWorldHeight) noexcept {
+                                                 Scalar world_width = world::kDefaultWidth,
+                                                 Scalar world_height = world::kDefaultHeight) noexcept {
     const Scalar half_w = world_width * static_cast<Scalar>(0.5) - kEps;
     const Scalar half_h = world_height * static_cast<Scalar>(0.5) - kEps;
 
@@ -157,6 +173,37 @@ inline void updateShipPhysics(Vector2D& position,
 // принимаются строго как double (Scalar); int/float и т.п. — ошибка компиляции.
 template <typename T1, typename T2>
 Vector2D clampToWorldBounds(const Vector2D&, T1, T2) = delete;
+
+/// Wraps a circle of radius `radius` through an origin-centered rectangle
+/// with full extents (world_width, world_height). Once the circle is fully
+/// past one edge, its center is placed so the opposite edge of the circle
+/// touches the world boundary; it then slides back in.
+/// \pre radius >= 0, world_width > 0, world_height > 0
+[[nodiscard]] inline Vector2D wrapCircleThroughWorldBounds(const Vector2D& position,
+                                                           Scalar radius,
+                                                           Scalar world_width = world::kDefaultWidth,
+                                                           Scalar world_height = world::kDefaultHeight) noexcept {
+    const Scalar half_w = world_width * static_cast<Scalar>(0.5);
+    const Scalar half_h = world_height * static_cast<Scalar>(0.5);
+
+    Vector2D out = position;
+
+    if (out.x + radius < -half_w)
+        out.x = half_w + radius;
+    else if (out.x - radius > half_w)
+        out.x = -half_w - radius;
+
+    if (out.y + radius < -half_h)
+        out.y = half_h + radius;
+    else if (out.y - radius > half_h)
+        out.y = -half_h - radius;
+
+    return out;
+}
+
+// Запрет неявных преобразований
+template <typename T1, typename T2>
+Vector2D wrapCircleThroughWorldBounds(const Vector2D&, Scalar, T1, T2) = delete;
 
 namespace collision {
 
