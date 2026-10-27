@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include "config.h"
@@ -45,7 +44,7 @@ struct ActionEvent {
  *         на потоке(ах), обслуживающем(их) io_context; состояние мира (entities_)
  *         доступно только внутри doTick(). start()/stop() лишь помещают работу
  *         на strand и возвращаются немедленно.
- *       - enqueueAction(), currentTick(), lastSnapshot() безопасны для вызова
+ *       - enqueueAction(), currentTick() безопасны для вызова
  *         из любых потоков.
  *       - Внешние мутации мира выполняются только через очередь команд и
  *         применяются на ближайшем тике.
@@ -157,24 +156,17 @@ public:
     [[nodiscard]] std::uint64_t currentTick() const noexcept;
 
     /**
-     * @brief Возвращает последний опубликованный снимок состояния мира.
-     * @details Потокобезопасен: возвращает копию снимка под last_snapshot_mutex_.
-     * @return std::shared_ptr<const snapshot::GameSnapshot> Снимок состояния или nullptr,
-     *         если тики ещё не запускались.
-     */
-    [[nodiscard]] std::shared_ptr<const snapshot::GameSnapshot> lastSnapshot() const noexcept;
-
-    /**
      * @brief Возвращает до count свободных позиций внутри мировых границ.
      * @details Свободная позиция — узел регулярной сетки, не пересекающийся ни с одной
      *          живой сущностью мира (учитываются все типы, включая Bullet).
-     *          Реализация отсутствует: появится вместе с симуляцией мира;
-     *          границы мира берутся из world_width_/world_height_.
+     *          Границы мира берутся из world_width_/world_height_.
      * @param count Входные данные: Максимальное число позиций (0 -> пустой результат).
      * @param clearance Входные данные: Радиус «запретной» окружности кандидата, по умолчанию 30.0.
      * @return std::vector<math::Vector2D> Свободные позиции (не более count).
      * @note Константен: читает entities_ — вызывать
      *       только в контексте тика (на tick_strand_).
+     * @todo TODO: реализовать поиск свободных позиций на регулярной сетке —
+     *       нужен для спавна кораблей новых игроков (spawnShips()).
      */
     [[nodiscard]] std::vector<math::Vector2D> freePositions(std::size_t count,
                                                             math::Scalar clearance = world::kDefaultClearance) const;
@@ -204,7 +196,18 @@ private:
 
     /**
      * @brief Выполняет тело одного игрового тика: обработка входов, физика,
-     *        коллизии, поддержание популяции астероидов, сбор и рассылка снимка.
+     *        коллизии, поддержание популяции астероидов, спавн кораблей новых
+     *        игроков, сбор и рассылка снимка.
+     * @details Порядок шагов:
+     *          1. processInputQueue() — накопление действий игроков (в т.ч. PlayerJoin).
+     *          2. updatePhysics(), resolveCollisions(), maintainAsteroidPopulation() —
+     *             расчёт мира за тик.
+     *          3. spawnShips() — создание кораблей новых игроков ПОСЛЕ физики,
+     *             поэтому они не участвуют в расчётах текущего тика.
+     *          4. buildGameSnapshot() + broadcastSnapshot().
+     *             Приветственный снимок (с кораблями новичков) доставляет новым
+     *             игрокам broadcast: их сессии уже в SessionRegistry к моменту
+     *             рассылки, поэтому отдельная персональная рассылка не нужна.
      * @details Исключения любого рода перехватываются и логируются, чтобы
      *          одиночный сбой не остановил игровой цикл.
      * @inputs Входных параметров нет.
@@ -257,12 +260,22 @@ private:
      */
     void shutdownTickLoop();
 
+    // Сессия нового игрока и его имя; корабль создаётся после расчёта физики
+    // мира (см. spawnShips() и runTickStep()).
+    struct PendingJoin {
+        SessionId session_id;
+        std::string player_name;
+    };
+
     /**
      * @brief Обрабатывает накопленные действия игроков.
-     * @inputs Входных параметров нет.
+     * @details Выполняется в начале тика. Корабль нового игрока создаётся не здесь,
+     *          а позже в spawnShips() (после расчёта физики); здесь лишь накапливается
+     *          session_id и имя игрока для последующего спавна (см. runTickStep()).
+     * @param new_players Входные данные: Буфер для новых игроков текущего тика.
      * @outputs Выходных значений нет.
      */
-    void processInputQueue();
+    void processInputQueue(std::vector<PendingJoin>& new_players);
 
     /**
      * @brief Обновляет физику мира (движение кораблей, снарядов, астероидов).
@@ -286,18 +299,31 @@ private:
     void maintainAsteroidPopulation();
 
     /**
+     * @brief Создаёт корабли новых игроков в свободных от объектов областях мира.
+     * @details Вызывается в конце тика ПОСЛЕ расчёта физики и коллизий: корабль
+     *          появляется на свободной позиции (freePositions) и попадает в снимок
+     *          текущего тика, но в физике этого тика не участвует.
+     * @param new_players Входные данные: Сессии новых игроков текущего тика.
+     * @outputs Выходных значений нет.
+     */
+    void spawnShips(const std::vector<PendingJoin>& new_players);
+
+    /**
      * @brief Собирает снимок текущего состояния мира для рассылки.
+     * @details Заполняет переиспользуемый буфер snapshot_buffer_ снимками живых
+     *          сущностей, чтобы не аллоцировать вектор на каждом тике.
      * @return snapshot::GameSnapshot Снимок состояния мира.
      */
     [[nodiscard]] snapshot::GameSnapshot buildGameSnapshot();
 
     /**
      * @brief Рассылает снимок состояния мира всем клиентам через event_bus_.
-     * @details Заглушка: на данном этапе не реализовано, см. TODO.
-     * @inputs Входных параметров нет.
+     * @details Принимает готовый снимок из runTickStep(), чтобы не собирать
+     *          его повторно внутри рассылки.
+     * @param snapshot Входные данные: Готовый снимок состояния мира.
      * @outputs Выходных значений нет.
      */
-    void broadcastSnapshot();
+    void broadcastSnapshot(const snapshot::GameSnapshot& snapshot);
 
     /**
      * @brief Здесь лежат все подписки
@@ -324,15 +350,14 @@ private:
     std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
     ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
     [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
-    std::shared_ptr<events::EventBus> event_bus_;   ///< Шина событий сервера
+    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
     boost::asio::steady_timer tick_timer_;              ///< Таймер игровых тиков
     std::chrono::microseconds tick_interval_;           ///< Интервал одного тика
     math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;  ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;                          ///< Защита last_snapshot_
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
 };

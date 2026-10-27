@@ -1,10 +1,14 @@
 #include "world_instance.h"
 
+#include <algorithm>
 #include <exception>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
+#include "entity_utils.h"
 #include "logger.h"
+#include "network_response_router.h"
 
 std::shared_ptr<WorldInstance> WorldInstance::create(boost::asio::io_context& io_context,
                                                      std::shared_ptr<events::EventBus> event_bus,
@@ -171,16 +175,22 @@ void WorldInstance::doTick(const boost::system::error_code& error) {
 
 void WorldInstance::runTickStep() {
     try {
-        processInputQueue();
+        // Новые игроки текущего тика: корабли создаются в spawnShips() после
+        // расчёта физики, приветственный снимок им уходит в конце тика.
+        std::vector<PendingJoin> new_players;
+        processInputQueue(new_players);
         updatePhysics(static_cast<float>(tick_interval_.count()) / 1'000'000.0f);
         resolveCollisions();
         maintainAsteroidPopulation();
+        // Спавн после физики: корабли новичков не участвуют в расчётах текущего тика.
+        spawnShips(new_players);
 
-        {
-            std::lock_guard lock(last_snapshot_mutex_);
-            last_snapshot_ = std::make_shared<snapshot::GameSnapshot>(buildGameSnapshot());
-        }
-        broadcastSnapshot();
+        auto snapshot = buildGameSnapshot();
+        // Приветственный снимок текущего тика (с кораблями новичков) доставляет
+        // новому игроку broadcast: сессии регистрируются в SessionRegistry при
+        // подключении (tcp_server.cpp), поэтому персональная рассылка по
+        // new_players не требуется и лишь дублировала бы тот же payload.
+        broadcastSnapshot(snapshot);
     } catch (const std::exception& e) {
         LOG_ERROR("[WorldInstance] tick #{} error: {}", current_tick_.load(), e.what());
     } catch (...) {
@@ -216,12 +226,7 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
     return current_tick_.load();
 }
 
-std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const noexcept {
-    std::lock_guard lock(last_snapshot_mutex_);
-    return last_snapshot_;
-}
-
-void WorldInstance::processInputQueue() {
+void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
     auto actions = action_queue_.drain();
     if (actions.empty()) {
         return;
@@ -230,9 +235,13 @@ void WorldInstance::processInputQueue() {
     // проходимся по всем действиям игроков которые есть в игре.
     for (const auto& action : actions) {
         switch (action.type) {
-            case ActionType::PlayerJoin:
-                // вот тут кто-то добавит в мапу session_to_ship_ связку айди сессии и корабля
+            case ActionType::PlayerJoin: {
+                // Корабль создаётся в spawnShips() в конце тика (после физики).
+                // Здесь копим сессию и имя: приветственный снимок новичку уйдёт
+                // после появления его корабля на свободной позиции.
+                new_players.push_back(PendingJoin{action.session_id, action.player_name});
                 break;
+            }
             case ActionType::PlayerQuit: {
                 /* Достаём EntityId мапы session_to_ship_ по action.session_id, находим в EntityPool нужный корабль и
                  * помечаем удалённым, выходим из цикла и удаляем связь из мапы session_to_ship_, в конце вызываем
@@ -275,13 +284,51 @@ void WorldInstance::maintainAsteroidPopulation() {
     // TODO: поддерживать количество астероидов на карте через asteroid_factory_.
 }
 
-snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
-    // TODO: собрать снимок состояния мира для рассылки клиентам.
-    return snapshot::GameSnapshot{};
+void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
+    if (new_players.empty()) {
+        return;
+    }
+
+    // TODO: использовать freePositions(), когда появится реализация; пока
+    // все корабли спавнятся в центре мира ({0, 0}) — свободная от объектов
+    // область будет гарантироваться поиском на регулярной сетке.
+    for (const auto& join : new_players) {
+        auto* entity = entities_.acquire();
+        entity->type = types::EntityType::Ship;
+        entity->mass = world::kShipDefaultMass;
+        entity->radius = world::kShipDefaultRadius;
+        entity->transform = domain::TransformComponent{{0.0, 0.0}, {0.0, 0.0}, 0.0};
+
+        domain::ShipComponent ship;
+        ship.name.fill('\0');
+        const std::size_t len = std::min(join.player_name.size(), ship.name.size() - 1);
+        std::copy_n(join.player_name.data(), len, ship.name.begin());
+        ship.thrust_power = world::kShipDefaultThrustPower;
+        ship.drag = world::kShipDefaultDrag;
+        entity->ship = ship;
+
+        entity->health = domain::HealthComponent{world::kShipDefaultHealth, world::kShipDefaultHealth};
+        entity->combat = domain::CombatComponent{world::kShipDefaultDamage, entity->id};
+
+        // Привязываем сессию к кораблю: по ней ищется корабль при обработке
+        // команд игрока и удалении при PlayerQuit.
+        session_to_ship_[join.session_id] = entity->id;
+    }
 }
 
-void WorldInstance::broadcastSnapshot() {
-    // TODO: разослать buildGameSnapshot() всем клиентам через event_bus_.
+snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
+    domain::buildEntitySnapshots(entities_, snapshot_buffer_);
+    const auto tick_number = static_cast<std::uint32_t>(current_tick_.load());
+    // Копируем, чтобы переиспользовать буфер на следующем тике (ёмкость сохраняется).
+    return snapshot::GameSnapshot{snapshot_buffer_, tick_number};
+}
+
+void WorldInstance::broadcastSnapshot(const snapshot::GameSnapshot& snapshot) {
+    // Сериализуем готовый снимок мира и публикуем в шину событий.
+    // session_id == 0 (kBroadcastSessionId) — маркер массовой рассылки всем клиентам,
+    // обработку берёт на себя SessionRegistry.
+    const auto payload = snapshot.Serialize();
+    event_bus_->publish(SendPacketEvent{NetworkResponseRouter::kBroadcastSessionId, std::move(payload)});
 }
 
 void WorldInstance::setupSubscriptions() {

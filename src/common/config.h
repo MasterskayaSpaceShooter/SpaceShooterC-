@@ -12,4 +12,12 @@ inline constexpr std::int64_t kMaxMissedTicks = 1;  ///< Допустимое о
 inline constexpr math::Scalar kDefaultWidth = 2000.0;   ///< Ширина мира по умолчанию
 inline constexpr math::Scalar kDefaultHeight = 2000.0;  ///< Высота мира по умолчанию
 inline constexpr math::Scalar kDefaultClearance = 30.0;  ///< Зазор «запретной» окружности кандидата
+
+// Параметры корабля игрока по умолчанию.
+inline constexpr math::Scalar kShipDefaultMass = 78.54;       ///< Масса корабля
+inline constexpr math::Scalar kShipDefaultRadius = 5;         ///< Радиус корабля
+inline constexpr math::Scalar kShipDefaultThrustPower = 7.5;  ///< Сила тяги корабля
+inline constexpr math::Scalar kShipDefaultDrag = 0.125;  ///< Сопротивление движению корабля
+inline constexpr std::uint16_t kShipDefaultHealth = 100;  ///< Максимальное здоровье корабля
+inline constexpr std::uint16_t kShipDefaultDamage = 10;   ///< Урон корабля при столкновении
 }  // namespace world
