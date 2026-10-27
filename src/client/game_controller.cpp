@@ -210,10 +210,7 @@ bool GameController::validatePlayerName(const std::string& name) {
 }
 
 void GameController::shoot() {
-    auto self = weak_from_this().lock();
-    if (!self)
-        return;
-    boost::asio::post(strand_, [self] {
+    boost::asio::post(strand_, [self = shared_from_this()] {
         self->doShoot();
     });
 }
@@ -229,13 +226,11 @@ void GameController::doShoot() {
     }
 
     const auto now = std::chrono::steady_clock::now();
-    if (has_shot_ && (now - last_shot_time_) < kShootCooldown) {
+    if ((now - last_shot_time_) < kShootCooldown) {
         return;
     }
     last_shot_time_ = now;
-    has_shot_ = true;
-    static const std::vector<std::uint8_t> kShootWire{'S', 'H', 'O', 'O', 'T'};
-    tcp_->send(kShootWire);
+    tcp_->send(protocol::encodeShoot());
 }
 
 }  // namespace client

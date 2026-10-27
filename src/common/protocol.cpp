@@ -41,8 +41,8 @@ std::vector<std::uint8_t> encode(const MoveMsg& m) {
     return toBytes(line);
 }
 
-std::vector<std::uint8_t> encodeAttack() {
-    return toBytes("ATTACK");
+std::vector<std::uint8_t> encodeShoot() {
+    return toBytes("SHOOT");
 }
 
 // ---- Server -> Client ----
