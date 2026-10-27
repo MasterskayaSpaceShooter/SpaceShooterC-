@@ -39,8 +39,8 @@ struct MoveMsg {
 std::vector<std::uint8_t> encode(const JoinMsg&);
 std::vector<std::uint8_t> encode(const MoveMsg&);
 
-/// "ATTACK" — a pure signal, no payload.
-std::vector<std::uint8_t> encodeAttack();
+/// "SHOOT" — a pure signal, no payload.
+std::vector<std::uint8_t> encodeShoot();
 
 // ---- Server -> Client ----
 

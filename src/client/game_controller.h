@@ -3,6 +3,7 @@
 #include <atomic>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "client_state.h"
+#include "client_world.h"
 #include "tcp_client.h"
 
 namespace client {
@@ -131,6 +133,8 @@ public:
      */
     void rejoin(std::string host, std::uint16_t port, std::string playerName);
 
+    void shoot();
+
 protected:
     GameController(TcpClientPtr tcp, boost::asio::io_context& io) :
         tcp_(std::move(tcp)), strand_(boost::asio::make_strand(io)) {}
@@ -190,6 +194,8 @@ private:
      */
     static bool validatePlayerName(const std::string& name);
 
+    void doShoot();
+
     TcpClientPtr tcp_;
 
     /// Serializes all GameController state mutation.
@@ -207,6 +213,11 @@ private:
 
     /// Touched only from strand_ (doStart writes, sendJoin reads).
     std::string playerName_;
+
+    ClientWorld world_;
+
+    std::chrono::steady_clock::time_point last_shot_time_{std::chrono::steady_clock::time_point::min()};
+    static constexpr auto kShootCooldown = std::chrono::milliseconds(50);
 };
 
 }  // namespace client
