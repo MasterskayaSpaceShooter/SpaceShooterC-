@@ -17,11 +17,13 @@ inline constexpr std::int64_t kMaxMissedTicks = 1;
 inline constexpr double kDefaultClearance = 30.0;
 
 // Параметры корабля игрока по умолчанию.
-inline constexpr double kShipDefaultMass = 78.54;         ///< Масса корабля
-inline constexpr double kShipDefaultRadius = 5;           ///< Радиус корабля
-inline constexpr double kShipDefaultThrustPower = 7.5;    ///< Сила тяги корабля
-inline constexpr double kShipDefaultDrag = 0.125;         ///< Сопротивление движению корабля
-inline constexpr std::uint16_t kShipDefaultHealth = 100;  ///< Максимальное здоровье корабля
-inline constexpr std::uint16_t kShipDefaultDamage = 10;   ///< Урон корабля при столкновении
+inline constexpr double kShipDefaultMass = 78.54;
+inline constexpr double kShipDefaultRadius = 5;
+/// Сила тяги корабля
+inline constexpr double kShipDefaultThrustPower = 7.5;
+/// Сопротивление движению корабля
+inline constexpr double kShipDefaultDrag = 0.125;
+inline constexpr std::uint16_t kShipDefaultHealth = 100;
+inline constexpr std::uint16_t kShipDefaultDamage = 10;
 
 }  // namespace world
