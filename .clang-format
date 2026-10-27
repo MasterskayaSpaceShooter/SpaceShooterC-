@@ -38,7 +38,7 @@ AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 
 # Spaces / pointers / control statements
-SpacesBeforeTrailingComments: 2
+AlignTrailingComments: true
 SpaceBeforeParens: ControlStatements
 DerivePointerAlignment: false
 PointerAlignment: Left
