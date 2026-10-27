@@ -380,6 +380,13 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
+    // подписка на вхождение клиента в игру
+    sub_player_join_ = event_bus_->subscribe<PlayerJoinEvent>([weak_self](const PlayerJoinEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onPlayerJoin(event);
+        }
+    });
+
     // далее другие подписки
 }
 
@@ -389,4 +396,13 @@ void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
     action.session_id = event.session_id;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] PlayerQuit for session {}", event.session_id);
+}
+
+void WorldInstance::onPlayerJoin(const PlayerJoinEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::PlayerJoin;
+    action.session_id = event.session_id;
+    action.player_name = event.login;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] PlayerJoin: {} join to game from session {}", event.login, event.session_id);
 }
