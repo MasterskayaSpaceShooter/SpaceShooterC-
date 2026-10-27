@@ -302,8 +302,8 @@ Vector2D clampToWorldBounds(const Vector2D&, T1, T2) = delete;
 // Логирует ошибку и возвращает false, если положение, радиус или размеры мира некорректны.
 [[nodiscard]] inline bool circleIntersectsOppositeWorldBounds(const Vector2D& position,
                                                               Scalar radius,
-                                                              Scalar world_width = kWorldWidth,
-                                                              Scalar world_height = kWorldHeight) {
+                                                              Scalar world_width = world::kDefaultWidth,
+                                                              Scalar world_height = world::kDefaultHeight) {
     if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(radius) || radius < 0.0) {
         LOG_ERROR("Position and radius must be finite, and radius non-negative");
         return false;
