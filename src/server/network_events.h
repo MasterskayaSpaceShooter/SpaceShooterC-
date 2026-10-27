@@ -74,6 +74,23 @@ struct ClientConnectedEvent : public NetworkEvent {
 };
 
 /**
+ * @brief Событие: Клиент прислал команду JOIN.
+ * @details Генерируется NetworkResponseRouter::onMessageReceived, когда payload
+ *          NetworkMessageEvent равен "JOIN".
+ */
+struct PlayerJoinEvent : public NetworkEvent {
+    SessionId session_id;
+    std::string login;  ///< Login/PlayerName
+
+    /**
+     * @brief Конструктор события подключения к игре.
+     * @param id Входные данные: ID сессии.
+     * @param login Входные данные: Строковый логин/имя клиента.
+     */
+    PlayerJoinEvent(SessionId id, std::string login) : NetworkEvent(id), login(std::move(login)) {}
+};
+
+/**
  * @brief Событие: Клиент разорвал соединение или был отключен по ошибке.
  * @details Генерируется классом Session при ошибке I/O или закрытии сокета.
  */

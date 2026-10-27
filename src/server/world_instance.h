@@ -346,23 +346,33 @@ private:
      */
     [[nodiscard]] std::vector<snapshot::LeaderboardEntry> buildLeaderboard() const;
 
+    /**
+     * @brief Колбек для подписки на событие PlayerJoinEvent
+     * @details Создаёт ActionType::PlayerJoin и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины PlayerJoinEvent
+     * @outputs Выходных значений нет.
+     */
+    void onPlayerJoin(const PlayerJoinEvent& event);
+
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
+    // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
     void onCollision(domain::Entity& ship, domain::Entity& asteroid);
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
-    std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
-    ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
-    [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
+    std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
+    ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
+    [[maybe_unused]] domain::EntityPool entities_;           ///< Пул сущностей мира
     std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
-    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
+    std::shared_ptr<events::EventBus> event_bus_;            ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
-    boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
-    std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
-    mutable std::mutex action_mutex_;          ///< Синхронизация enqueueAction() с остановкой
-    math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
-    math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
-    std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
+    boost::asio::steady_timer tick_timer_;                                     ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
+    mutable std::mutex action_mutex_;                                 ///< Синхронизация enqueueAction() с остановкой
+    math::Scalar world_width_{world::kDefaultWidth};                  ///< Ширина мира
+    math::Scalar world_height_{world::kDefaultHeight};                ///< Высота мира
+    std::atomic<State> state_{State::Stopped};                        ///< Состояние жизненного цикла игрового цикла
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
+    boost::signals2::scoped_connection sub_player_join_;
 };
