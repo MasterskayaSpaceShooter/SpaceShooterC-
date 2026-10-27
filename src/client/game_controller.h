@@ -19,8 +19,9 @@ namespace client {
  *
  * @par Scope
  * Owns the client state machine and issues commands to the server.
- * For now the only command is JOIN; the payload is a plain ASCII string
- * `"JOIN <username>"`.
+ * For now the only command is JOIN; the wire payload is `"JOIN <name>"`
+ * with a single space as delimiter. playerName containing invalid characters
+ * (whitespace / control / NUL) — rejected.
  *
  * @par Threading model
  * Async. All mutation happens on `strand_`. Public methods are callable from
@@ -40,11 +41,12 @@ namespace client {
  * callback silently no-ops.
  *
  * @par Re-entrancy
- * start() and shutdown() may be called concurrently from any threads.
- * Ordering between them is the order their posts land on strand_. The
- * connect callback re-checks state_ == Connecting after its hop to the
- * strand, so a shutdown() that raced with an in-flight connect is
- * honored.
+ * start(), shutdown(), and rejoin() may be called concurrently from any
+ * threads. Ordering between them is the order their posts land on strand_.
+ * The connect callback re-checks state_ == Connecting AND matches the
+ * connectGen_ it was issued with after its hop to the strand, so a
+ * shutdown() or rejoin() that raced with an in-flight connect is honored
+ * (stale callback dropped).
  *
  * This class does NOT call shutdown() in its destructor. The program is
  * required to shut down cleanly, in this order:
@@ -81,8 +83,16 @@ public:
     /**
      * @brief Connect and send JOIN on success.
      *
-     * @note Posted unconditionally. The re-entry guard lives in doStart() so
-     * concurrent start() / shutdown() calls are serialized on the strand.
+     * @note playerName is validated synchronously on the calling thread
+     * before posting. If invalid, LOG_ERROR is emitted and the function
+     * returns WITHOUT posting and WITHOUT changing state.
+     *
+     * If playerName is valid, the work is posted to the strand. The
+     * re-entry guard lives in doStart() so concurrent start() / shutdown()
+     * are serialized on the strand. doStart() only proceeds when the
+     * current state is Disconnected; from any other state (e.g. GameEnd)
+     * this call is a logged no-op. To reset from an arbitrary state, use
+     * rejoin().
      */
     void start(std::string host, std::uint16_t port, std::string playerName);
 
@@ -96,18 +106,50 @@ public:
     /// @brief Lock-free snapshot of the client state. Safe from any thread.
     [[nodiscard]] ClientState state() const noexcept;
 
+    /**
+     * @brief Ends the current session and starts a fresh one.
+     *
+     * @note playerName is validated synchronously on the calling thread
+     * before posting. If invalid, LOG_ERROR is emitted and the function
+     * returns WITHOUT ending the current session: state is left
+     * unchanged (e.g. stays in GameEnd / InGame).
+     *
+     * If playerName is valid, posts doShutdown() and doStart()
+     * back-to-back on strand_, so the two cannot be interleaved with a
+     * racing start() / shutdown() / rejoin().
+     *
+     * @par Rejoin policy (MVP: zero cooldown)
+     * There is NO client-side cooldown. After GAME_END the app may call
+     * rejoin() immediately. The server is the sole authority on whether a
+     * rejoin is premature and signals that with REJECT.
+     *
+     * @par Session model
+     * Every rejoin is a fresh TCP session + fresh JOIN. The controller never
+     * attempts to reuse an already-open socket after GAME_END. This makes state
+     * unambiguous: either the new connect succeeds and JOIN is sent, or it
+     * fails and the client is Disconnected.
+     */
+    void rejoin(std::string host, std::uint16_t port, std::string playerName);
+
 protected:
     GameController(TcpClientPtr tcp, boost::asio::io_context& io) :
         tcp_(std::move(tcp)), strand_(boost::asio::make_strand(io)) {}
 
 private:
     /**
-     * @brief Wires TcpClient callbacks. Called once from create(), after
-     *        weak_from_this() is guaranteed to be populated.
+     * @brief Wires TcpClient callbacks. Called once from create().
      *
-     * @par Strand hop
-     * TcpClient invokes these on TcpClient::strand_. Immediately re-posted
-     * to GameController::strand_ so all state mutation shares one queue.
+     * @par Lifetime invariant
+     * Never unwired. doShutdown() does NOT clear callbacks, so a subsequent
+     * start() / rejoin() reuses the same wiring without a cross-strand
+     * reinstall race. Two guards make this safe:
+     *
+     *  - onMessageOnStrand() drops incoming messages while Disconnected
+     *    (late delivery from a prior session, or after the server closed
+     *    the socket following GAME_END).
+     *  - disconnect handler drops events while Disconnected (redundant)
+     *    or Connecting (stale: the disconnect posted by rejoin()'s
+     *    doShutdown() can fire after the new connect has already started).
      */
     void wireCallbacks();
 
@@ -116,25 +158,21 @@ private:
     void doShutdown();
 
     /**
-     * @brief Sends the JOIN command.
-     *
-     * @par MVP wire format
-     * @code
-     *   payload = "JOIN <playerName>"     // raw ASCII, no opcode, no length
-     * @endcode
-     *
-     * @warning Temporary format.
+     * @brief Sends the JOIN command via protocol::encode.
      */
     void sendJoin();
 
     /**
-     * @brief Handles a server message. MVP string protocol.
+     * @brief Handles a server message by delegating to protocol::decode().
      *
-     * Recognised prefixes:
-     *   - "ACCEPT"  -> InGame
-     *   - "REJECT"  -> Disconnected
+     * Dispatch table:
+     *   - Accept  -> InGame
+     *   - Reject  -> doShutdown() (Disconnected; server refused the session)
+     *   - GameEnd -> GameEnd       (match over for THIS client)
+     *   - Unknown -> logged, state unchanged
      *
-     * @warning Temporary string dispatch. Same note as sendJoin().
+     * Messages arriving while Disconnected are dropped (late delivery after
+     * shutdown, or after the server closed the socket following GAME_END).
      */
     void onMessageOnStrand(const std::vector<std::uint8_t>& payload);
 
@@ -143,6 +181,15 @@ private:
      */
     void setState(ClientState next) noexcept;
 
+    /**
+     * @brief Validates playerName against the wire-protocol requirements
+     *        of "JOIN <name>": non-empty, and no character <= 0x20 or
+     *        0x7f. Emits LOG_ERROR on failure (side effect). Does not
+     *        touch state. Called synchronously from start()/rejoin()
+     *        before the strand post.
+     */
+    static bool validatePlayerName(const std::string& name);
+
     TcpClientPtr tcp_;
 
     /// Serializes all GameController state mutation.
@@ -150,6 +197,13 @@ private:
 
     /// Atomic because state() is a lock-free getter callable from any thread.
     std::atomic<ClientState> state_{ClientState::Disconnected};
+
+    /// Strand-only. Bumped on every connect() call. Each connect callback
+    /// captures the generation it was issued with; on strand, a mismatch
+    /// means the callback belongs to a superseded connect attempt and is
+    /// dropped. Prevents a stale in-flight connect from winning against a
+    /// newer one after rejoin()/shutdown()+start().
+    std::uint64_t connectGen_ = 0;
 
     /// Touched only from strand_ (doStart writes, sendJoin reads).
     std::string playerName_;
