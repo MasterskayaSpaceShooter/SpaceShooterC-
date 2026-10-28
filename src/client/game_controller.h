@@ -67,8 +67,6 @@ namespace client {
  */
 class GameController : public std::enable_shared_from_this<GameController> {
 public:
-    static constexpr std::chrono::milliseconds kShootCooldown{50};
-
     using TcpClientPtr = std::shared_ptr<TcpClient>;
 
     /**
