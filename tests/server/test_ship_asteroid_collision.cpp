@@ -30,7 +30,7 @@ TEST(ShipAsteroidCollisionTest, RepelStubDoesNotChangeVelocities) {
     ship.transform->velocity = {10.0, 0.0};
     asteroid.transform->position = {10.0, 0.0};
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_FALSE(asteroid.isDestroyed);
     EXPECT_EQ(ship.health->current, 80);
@@ -43,7 +43,7 @@ TEST(ShipAsteroidCollisionTest, EatsAsteroidBelowHalfShipMass) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(99.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.mass, 299.0);
@@ -56,13 +56,13 @@ TEST(ShipAsteroidCollisionTest, GrowsShipRadiusWhenMassReachesNextLevel) {
 
     for (const auto asteroid_mass : {19.0, 28.0, 40.0}) {
         auto asteroid = MakeAsteroid(asteroid_mass);
-        domain::collision::onCollision(ship, asteroid);
+        domain::collision::onCollisionShipAsteroid(ship, asteroid);
         EXPECT_TRUE(asteroid.isDestroyed);
         EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius);
     }
 
     auto asteroid = MakeAsteroid(31.0);
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius * 2.0);
@@ -81,7 +81,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageAtHalfShipMassBoundary) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(100.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_FALSE(asteroid.isDestroyed);
     EXPECT_EQ(ship.health->current, 80);
@@ -92,7 +92,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageWhenAsteroidMassEqualsShipMass
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(200.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -102,7 +102,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageWhenAsteroidIsHeavier) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(201.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -115,7 +115,7 @@ TEST(ShipAsteroidCollisionTest, DamageStubDoesNotDestroyLowHealthEntities) {
     ship.health = domain::HealthComponent{1, 1};
     asteroid.health = domain::HealthComponent{1, 1};
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 1);
     EXPECT_EQ(asteroid.health->current, 1);
@@ -127,7 +127,7 @@ TEST(ShipAsteroidCollisionTest, IgnoresInfiniteMasses) {
     auto ship = MakeShip(std::numeric_limits<math::Scalar>::infinity());
     auto asteroid = MakeAsteroid();
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -139,7 +139,7 @@ TEST(ShipAsteroidCollisionTest, DoesNothingWhenEntitiesAreNotShipAndAsteroid) {
     auto asteroid = MakeAsteroid();
     ship.type = types::EntityType::Asteroid;
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.mass, 200.0);
     EXPECT_EQ(ship.health->current, 80);
@@ -152,7 +152,7 @@ TEST(ShipAsteroidCollisionTest, CoincidentEntitiesLeaveVelocitiesUnchangedWithRe
     auto asteroid = MakeAsteroid(100.0);
     ship.transform->velocity = {10.0, 0.0};
 
-    EXPECT_NO_THROW(domain::collision::onCollision(ship, asteroid));
+    EXPECT_NO_THROW(domain::collision::onCollisionShipAsteroid(ship, asteroid));
 
     EXPECT_EQ(ship.transform->velocity, (math::Vector2D{10.0, 0.0}));
     EXPECT_EQ(asteroid.transform->velocity, (math::Vector2D{}));

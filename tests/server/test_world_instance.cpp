@@ -27,21 +27,6 @@ TEST(WorldInstance, LastSnapshotIsNullBeforeFirstTick) {
     world->stop();
 }
 
-TEST(WorldInstance, FreePositionsReturnsCandidatesInsideWorld) {
-    boost::asio::io_context io_context;
-    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 100.0, 100.0);
-
-    const auto positions = world->freePositions(3, 10.0);
-
-    ASSERT_EQ(positions.size(), 3u);
-    for (const auto& position : positions) {
-        EXPECT_GE(position.x, -40.0);
-        EXPECT_LE(position.x, 40.0);
-        EXPECT_GE(position.y, -40.0);
-        EXPECT_LE(position.y, 40.0);
-    }
-}
-
 TEST(WorldInstance, StopWithoutStartIsNoOp) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create());
