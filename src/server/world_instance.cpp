@@ -360,9 +360,8 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
 
 std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const {
     std::vector<snapshot::LeaderboardEntry> top_players;
-    auto& storage = const_cast<domain::EntityPool&>(entities_).storage();
 
-    for (const auto& slot : storage) {
+    for (const auto& slot : entities_.storage()) {
         // Пропускаем пустые слоты
         if (!slot.has_value())
             continue;
@@ -370,24 +369,28 @@ std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const 
 
         // Учитываем только живых игроков (тип Ship + есть компонент + health > 0)
         if (entity.type == types::EntityType::Ship && entity.ship.has_value() && entity.health.has_value() &&
-            entity.health->current > 0) {
+            entity.health->current > 0 && !entity.isDestroyed) {
             // Конвертируем char[32] в std::string
-            std::string player_name(entity.ship->name.data());
-            top_players.push_back({player_name, entity.ship->score});
+            std::string_view view(entity.ship->name.data(), entity.ship->name.size());
+            if (auto idx = view.find('\0'); idx != std::string_view::npos) {
+                view = view.substr(0, idx);
+            }
+            top_players.push_back({std::string(view), entity.ship->score});
         }
     }
 
-    // Сортируем по убыванию очков
-    std::sort(top_players.begin(), top_players.end(), [](const auto& a, const auto& b) {
-        return a.score > b.score;
-    });
-
     // Оставляем топ-10
     constexpr size_t kMaxLeaderboardSize = 10;
-    if (top_players.size() > kMaxLeaderboardSize) {
-        top_players.resize(kMaxLeaderboardSize);
-    }
+    const size_t top_count = std::min(kMaxLeaderboardSize, top_players.size());
 
+    std::partial_sort(top_players.begin(),
+                      top_players.begin() + top_count,
+                      top_players.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.score > b.score;
+                      });
+
+    top_players.resize(top_count);
     return top_players;
 }
 

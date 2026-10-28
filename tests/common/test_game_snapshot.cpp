@@ -107,7 +107,7 @@ TEST(GameSnapshotTest, RoundTripsAllEntityFields) {
 TEST(GameSnapshotTest, EncodesHeaderInNetworkByteOrder) {
     GameSnapshot snapshot{{}, {}, 0x12345678U};
 
-    EXPECT_EQ(snapshot.Serialize(), (Bytes{0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0}));
+    EXPECT_EQ(snapshot.Serialize(), (Bytes{0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0, 0, 0, 0, 0}));
 }
 
 TEST(GameSnapshotTest, RoundTripsEmptySnapshot) {
