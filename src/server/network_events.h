@@ -86,6 +86,7 @@ struct ClientDisconnectedEvent : public NetworkEvent {
 };
 
 /**
+<<<<<<< HEAD
  * @brief Событие: Клиент прислал команду SHOOT.
  * @details Генерируется NetworkResponseRouter::onMessageReceived, когда payload
  *          NetworkMessageEvent равен "SHOOT". Потребляется onShotReceived,
@@ -94,4 +95,11 @@ struct ClientDisconnectedEvent : public NetworkEvent {
 
 struct ShotMessageEvent : public NetworkEvent {
     explicit ShotMessageEvent(SessionId id) : NetworkEvent(id) {}
+=======
+ * @brief Событие: Корабль уничтожен
+ * @details Генерируется классом WorldInstance при гибели корабля
+ */
+struct ShipDestroyedEvent : public NetworkEvent {
+    explicit ShipDestroyedEvent(SessionId id) : NetworkEvent(id) {}
+>>>>>>> 3d17324 (add ShipDestroyedEvent)
 };
