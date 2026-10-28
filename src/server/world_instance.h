@@ -4,7 +4,6 @@
 #include <boost/asio.hpp>
 #include <boost/signals2/connection.hpp>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -49,13 +48,10 @@ struct ActionEvent {
  *         на потоке(ах), обслуживающем(их) io_context; состояние мира (entities_)
  *         доступно только внутри doTick(). start()/stop() лишь помещают работу
  *         на strand и возвращаются немедленно.
- *       - enqueueAction(), currentTick() безопасны для вызова
- *         выполнение шагов тика) сериализованы через tick_strand_.
- *         start()/stop() лишь помещают работу на strand и возвращаются немедленно.
  *       - enqueueAction(), currentTick(), lastSnapshot() безопасны для вызова
  *         из любых потоков.
- *       - entities_ защищён shared_mutex: тик изменяет его эксклюзивно,
- *         freePositions() читает под разделяемой блокировкой.
+ *       - entities_ защищён shared_mutex: runTickStep() держит unique_lock
+ *         на всё время тика; внешних читателей пула сегодня нет.
  * @note Объект должен жить в std::shared_ptr (см. create()): async-цепочка тиков
  *       удерживает себя через shared_from_this() и гарантирует деинициализацию
  *       только после завершения или отмены таймерного обработчика.
@@ -171,23 +167,6 @@ public:
      */
     [[nodiscard]] std::shared_ptr<const snapshot::GameSnapshot> lastSnapshot() const;
 
-    /**
-     * @brief Возвращает до count свободных позиций внутри мировых границ.
-     * @details Свободная позиция — узел регулярной сетки, не пересекающийся ни с одной
-     *          живой сущностью мира (учитываются все типы, включая Bullet).
-     *          Границы мира берутся из world_width_/world_height_.
-     * @param count Входные данные: Максимальное число позиций (0 -> пустой результат).
-     * @param clearance Входные данные: Радиус «запретной» окружности кандидата, по умолчанию 30.0.
-     * @return std::vector<math::Vector2D> Свободные позиции (не более count).
-     * @note Константен: читает entities_ — вызывать
-     *       только в контексте тика (на tick_strand_).
-     * @todo TODO: реализовать поиск свободных позиций на регулярной сетке —
-     *       нужен для спавна кораблей новых игроков (spawnShips()).
-     * @note Потокобезопасен: читает entities_ под разделяемой блокировкой.
-     */
-    [[nodiscard]] std::vector<math::Vector2D> freePositions(std::size_t count,
-                                                            math::Scalar clearance = world::kDefaultClearance) const;
-
 private:
     /**
      * @brief Состояния жизненного цикла игрового цикла.
@@ -203,8 +182,8 @@ private:
      *          Прочие ошибки таймера логируются, и игровой цикл останавливается.
      *          Следующий тик планируется до выполнения тела текущего,
      *          чтобы работа тика не сдвигала абсолютную каденцию.
-     *          Исключения любого этапа приводят к остановке цикла; номер тика
-     *          увеличивается только после успешного выполнения всех этапов.
+     *          Исключения внутри runTickStep() перехватываются там и не
+     *          останавливают цикл; тик считается завершённым (best-effort).
      * @param error Входные данные: Код ошибки Asio по результату ожидания таймера.
      * @outputs Выходных значений нет.
      */
@@ -224,11 +203,8 @@ private:
      *             Приветственный снимок (с кораблями новичков) доставляет новым
      *             игрокам broadcast: их сессии уже в SessionRegistry к моменту
      *             рассылки, поэтому отдельная персональная рассылка не нужна.
-     * @details Исключения любого рода перехватываются и логируются, чтобы
-     *          одиночный сбой не остановил игровой цикл.
-     *        коллизии, поддержание популяции астероидов, сбор и рассылка снимка.
-     * @details Исключения передаются в doTick(), чтобы частичный тик не считался
-     *          завершённым.
+     * Исключения любого рода перехватываются и логируются, чтобы
+     * одиночный сбой не остановил игровой цикл.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
@@ -303,9 +279,12 @@ private:
     void updatePhysics(math::Scalar dt);
 
     /**
-     * @brief Рассчитывает коллизии между сущностями мира.
-     * @inputs Входных параметров нет.
-     * @outputs Выходных значений нет.
+     * @brief Detects and resolves pairwise collisions between world entities.
+     * @details O(n²) broad loop (MVP); filter via mayCollide() →
+     *          narrow phase via math::collision::checkCircleCollision →
+     *          dispatchCollision() → reapDestroyedShips().
+     *          Side effect: publishes ShipDestroyedEvent for each ship that
+     *          died this tick and recycles destroyed entities from the pool.
      */
     void resolveCollisions();
 
@@ -315,6 +294,18 @@ private:
      * @outputs Выходных значений нет.
      */
     void maintainAsteroidPopulation();
+
+    /**
+     * @brief Возвращает до count свободных позиций внутри мировых границ.
+     * @details Свободная позиция — узел регулярной сетки, не пересекающийся ни
+     *          с одной живой сущностью мира.
+     * @param count Максимальное число позиций (0 -> пустой результат).
+     * @param clearance Радиус «запретной» окружности кандидата.
+     * @note PRECONDITION: caller holds entities_mutex_ (the tick's unique_lock).
+     *       Не берёт блокировку сам — иначе дедлок на tick_strand_.
+     */
+    [[nodiscard]] std::vector<math::Vector2D> freePositions(std::size_t count,
+                                                            math::Scalar clearance = world::kDefaultClearance) const;
 
     /**
      * @brief Создаёт корабли новых игроков в свободных от объектов областях мира.
@@ -359,15 +350,35 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    // TODO: реализовать остальные обработчики коллизий.
+    /**
+     * @brief Type-based collision filter (None excluded; Bullet↔Bullet and
+     *        Asteroid↔Asteroid suppressed).
+     */
+    [[nodiscard]] bool mayCollide(types::EntityType a, types::EntityType b) const noexcept;
+
+    /**
+     * @brief Dispatches a confirmed overlapping pair to the type-specific handler.
+     * @details Canonical argument order in each handler (Ship-first / Bullet-first)
+     *          regardless of pair order from the broad loop.
+     */
+    void dispatchCollision(domain::Entity& a, domain::Entity& b);
+
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
     void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
 
+    /**
+     * @brief Publishes ShipDestroyedEvent for ships that died this tick,
+     *        drops their session_to_ship_ mapping, then recycles the pool.
+     * @details Idempotent w.r.t. PlayerQuit: those entries were already removed
+     *          in processInputQueue(), so they are not re-published here.
+     */
+    void reapDestroyedShips();
+
     std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
     ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
-    [[maybe_unused]] domain::EntityPool entities_;           ///< Пул сущностей мира
+    domain::EntityPool entities_;                            ///< Пул сущностей мира
     std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
     std::shared_ptr<events::EventBus> event_bus_;            ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла

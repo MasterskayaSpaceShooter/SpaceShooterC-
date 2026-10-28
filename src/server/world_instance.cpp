@@ -182,6 +182,7 @@ void WorldInstance::doTick(const boost::system::error_code& error) {
 }
 
 void WorldInstance::runTickStep() {
+    std::unique_lock entities_lock(entities_mutex_);
     try {
         // Новые игроки текущего тика: корабли создаются в spawnShips() после
         // расчёта физики, приветственный снимок им уходит в конце тика.
@@ -193,16 +194,16 @@ void WorldInstance::runTickStep() {
         // Спавн после физики: корабли новичков не участвуют в расчётах текущего тика.
         spawnShips(new_players);
 
-        auto snapshot = buildGameSnapshot();
+        auto shared_snapshot = std::make_shared<const snapshot::GameSnapshot>(buildGameSnapshot());
         {
             std::lock_guard lock(last_snapshot_mutex_);
-            last_snapshot_ = std::make_shared<snapshot::GameSnapshot>(std::move(snapshot));
+            last_snapshot_ = shared_snapshot;
         }
         // Приветственный снимок текущего тика (с кораблями новичков) доставляет
         // новому игроку broadcast: сессии регистрируются в SessionRegistry при
         // подключении (tcp_server.cpp), поэтому персональная рассылка по
         // new_players не требуется и лишь дублировала бы тот же payload.
-        broadcastSnapshot(snapshot);
+        broadcastSnapshot(*shared_snapshot);
     } catch (const std::exception& e) {
         LOG_ERROR("[WorldInstance] tick #{} error: {}", current_tick_.load(), e.what());
     } catch (...) {
@@ -244,6 +245,9 @@ std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() cons
 }
 
 std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
+    // PRECONDITION: caller holds entities_mutex_ (runTickStep's unique_lock).
+    // Do NOT acquire entities_mutex_ here — same-thread lock upgrade would deadlock.
+
     if (count == 0) {
         return {};
     }
@@ -264,7 +268,6 @@ std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math
     const auto min_y = -half_height + clearance;
     const auto max_y = half_height - clearance;
 
-    std::shared_lock entities_lock(entities_mutex_);
     for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
         for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
             const math::Vector2D candidate{x, y};
@@ -295,7 +298,19 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 break;
             }
             case ActionType::PlayerQuit: {
-                session_to_ship_.erase(action.session_id);
+                auto it = session_to_ship_.find(action.session_id);
+                if (it == session_to_ship_.end())
+                    break;
+
+                const types::EntityId ship_id = it->second;
+                for (auto& entity : entities_.storage()) {
+                    if (entity && entity->id == ship_id) {
+                        entity->isDestroyed = true;
+                        break;
+                    }
+                }
+                session_to_ship_.erase(it);
+                // No ShipDestroyedEvent — the player is gone, this is not a kill.
                 break;
             }
             case ActionType::MoveAndShoot:
@@ -311,7 +326,106 @@ void WorldInstance::updatePhysics(math::Scalar) {
 }
 
 void WorldInstance::resolveCollisions() {
-    // TODO: найти пересечения сущностей и вызвать соответствующие onCollision().
+    auto& storage = entities_.storage();
+    const std::size_t n = storage.size();
+
+    for (std::size_t i = 0; i < n; ++i) {
+        auto& a_opt = storage[i];
+        if (!a_opt || a_opt->isDestroyed || !a_opt->transform)
+            continue;
+
+        for (std::size_t j = i + 1; j < n; ++j) {
+            if (a_opt->isDestroyed)  // bullet used already
+                break;
+            auto& b_opt = storage[j];
+            if (!b_opt || b_opt->isDestroyed || !b_opt->transform)
+                continue;
+            if (!mayCollide(a_opt->type, b_opt->type))
+                continue;
+            if (!math::collision::checkCircleCollision(a_opt->transform->position,
+                                                       a_opt->radius,
+                                                       b_opt->transform->position,
+                                                       b_opt->radius)) {
+                continue;
+            }
+            dispatchCollision(*a_opt, *b_opt);
+        }
+    }
+
+    reapDestroyedShips();
+}
+
+bool WorldInstance::mayCollide(types::EntityType a, types::EntityType b) const noexcept {
+    using T = types::EntityType;
+    if (a == T::None || b == T::None)
+        return false;
+    if (a == T::Bullet && b == T::Bullet)
+        return false;
+    if (a == T::Asteroid && b == T::Asteroid)
+        return false;
+    return true;
+}
+
+void WorldInstance::dispatchCollision(domain::Entity& a, domain::Entity& b) {
+    using T = types::EntityType;
+    const T ta = a.type;
+    const T tb = b.type;
+
+    if (ta == T::Ship && tb == T::Ship)
+        onCollisionShipShip(a, b);
+    else if (ta == T::Ship && tb == T::Asteroid)
+        onCollisionShipAsteroid(a, b);
+    else if (ta == T::Asteroid && tb == T::Ship)
+        onCollisionShipAsteroid(b, a);
+    else if (ta == T::Bullet && tb == T::Ship)
+        onCollisionBulletShip(a, b);
+    else if (ta == T::Ship && tb == T::Bullet)
+        onCollisionBulletShip(b, a);
+    else if (ta == T::Bullet && tb == T::Asteroid)
+        onCollisionBulletAsteroid(a, b);
+    else if (ta == T::Asteroid && tb == T::Bullet)
+        onCollisionBulletAsteroid(b, a);
+}
+
+void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
+    (void)ship1;
+    (void)ship2;
+}
+
+void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
+    (void)proj;
+    (void)ship;
+}
+
+void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
+    (void)proj;
+    (void)asteroid;
+}
+
+void WorldInstance::reapDestroyedShips() {
+    // Publish one ShipDestroyedEvent per session whose ship died this tick,
+    // then drop the mapping, then recycle the pool.
+    // PlayerQuit path already removed its mapping in processInputQueue(),
+    // so those ships are not revisited here (idempotent).
+    for (auto it = session_to_ship_.begin(); it != session_to_ship_.end();) {
+        const types::EntityId eid = it->second;
+        bool destroyed = false;
+        for (const auto& opt : entities_.storage()) {
+            if (opt && opt->id == eid) {
+                destroyed = opt->isDestroyed;
+                break;
+            }
+        }
+        if (destroyed) {
+            const SessionId sid = it->first;
+            LOG_INFO("[WorldInstance] ship destroyed: session={}, entity={}", sid, eid.get());
+            event_bus_->publish(ShipDestroyedEvent{sid});
+            it = session_to_ship_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    entities_.recycleDestroyed();
 }
 
 void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
@@ -327,15 +441,25 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
         return;
     }
 
-    // TODO: использовать freePositions(), когда появится реализация; пока
-    // все корабли спавнятся в центре мира ({0, 0}) — свободная от объектов
-    // область будет гарантироваться поиском на регулярной сетке.
-    for (const auto& join : new_players) {
+    auto positions = freePositions(new_players.size());
+    if (positions.size() < new_players.size()) {
+        LOG_WARN(
+            "[WorldInstance] spawnShips: only {} free positions for {} players; "
+            "falling back to origin for the remaining {}",
+            positions.size(),
+            new_players.size(),
+            new_players.size() - positions.size());
+    }
+
+    for (std::size_t i = 0; i < new_players.size(); ++i) {
+        const auto& join = new_players[i];
+        const math::Vector2D spawn_pos = (i < positions.size()) ? positions[i] : math::Vector2D{0.0, 0.0};
+
         auto* entity = entities_.acquire();
         entity->type = types::EntityType::Ship;
         entity->mass = world::kShipDefaultMass;
         entity->radius = world::kShipDefaultRadius;
-        entity->transform = domain::TransformComponent{{0.0, 0.0}, {0.0, 0.0}, 0.0};
+        entity->transform = domain::TransformComponent{spawn_pos, {0.0, 0.0}, 0.0};
 
         domain::ShipComponent ship;
         ship.name.fill('\0');
@@ -365,7 +489,7 @@ void WorldInstance::broadcastSnapshot(const snapshot::GameSnapshot& snapshot) {
     // Сериализуем готовый снимок мира и публикуем в шину событий.
     // session_id == 0 (kBroadcastSessionId) — маркер массовой рассылки всем клиентам,
     // обработку берёт на себя SessionRegistry.
-    const auto payload = snapshot.Serialize();
+    auto payload = snapshot.Serialize();
     event_bus_->publish(SendPacketEvent{NetworkResponseRouter::kBroadcastSessionId, std::move(payload)});
 }
 
