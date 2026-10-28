@@ -79,7 +79,6 @@ struct ClientConnectedEvent : public NetworkEvent {
  *          NetworkMessageEvent равен "JOIN".
  */
 struct PlayerJoinEvent : public NetworkEvent {
-    SessionId session_id;
     std::string login;  ///< Login/PlayerName
 
     /**
