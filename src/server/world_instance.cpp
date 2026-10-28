@@ -194,6 +194,10 @@ void WorldInstance::runTickStep() {
         spawnShips(new_players);
 
         auto snapshot = buildGameSnapshot();
+        {
+            std::lock_guard lock(last_snapshot_mutex_);
+            last_snapshot_ = std::make_shared<snapshot::GameSnapshot>(std::move(snapshot));
+        }
         // Приветственный снимок текущего тика (с кораблями новичков) доставляет
         // новому игроку broadcast: сессии регистрируются в SessionRegistry при
         // подключении (tcp_server.cpp), поэтому персональная рассылка по
@@ -234,55 +238,72 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
     return current_tick_.load();
 }
 
+std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
+    std::lock_guard lock(last_snapshot_mutex_);
+    return last_snapshot_;
+}
+
+std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
+    if (count == 0) {
+        return {};
+    }
+    if (!std::isfinite(clearance) || clearance < 0.0) {
+        throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
+    }
+
+    const auto half_width = world_width_ * 0.5;
+    const auto half_height = world_height_ * 0.5;
+    if (clearance > half_width || clearance > half_height) {
+        return {};
+    }
+
+    std::vector<math::Vector2D> positions;
+    const auto spacing = std::max(2.0 * clearance, 1.0);
+    const auto min_x = -half_width + clearance;
+    const auto max_x = half_width - clearance;
+    const auto min_y = -half_height + clearance;
+    const auto max_y = half_height - clearance;
+
+    std::shared_lock entities_lock(entities_mutex_);
+    for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
+        for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
+            const math::Vector2D candidate{x, y};
+            const auto overlaps = std::any_of(entities_.storage().begin(),
+                                              entities_.storage().end(),
+                                              [&candidate, clearance](const auto& slot) {
+                                                  if (!slot || slot->isDestroyed || !slot->transform) {
+                                                      return false;
+                                                  }
+                                                  const auto combined_radius = clearance + slot->radius;
+                                                  return (candidate - slot->transform->position).lengthSquared() <=
+                                                         combined_radius * combined_radius;
+                                              });
+            if (!overlaps) {
+                positions.push_back(candidate);
+            }
+        }
+    }
+    return positions;
+}
+
 void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
-    /* std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
-         std::lock_guard lock(last_snapshot_mutex_);
-         return last_snapshot_;
-     }
-
-
-     std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
-         if (count == 0) {
-             return {};
-         }
-         if (!std::isfinite(clearance) || clearance < 0.0) {
-             throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
-         }
-
-         const auto half_width = world_width_ * 0.5;
-         const auto half_height = world_height_ * 0.5;
-         if (clearance > half_width || clearance > half_height) {
-             return {};
-         }
-
-         std::vector<math::Vector2D> positions;
-         const auto spacing = std::max(2.0 * clearance, 1.0);
-         const auto min_x = -half_width + clearance;
-         const auto max_x = half_width - clearance;
-         const auto min_y = -half_height + clearance;
-         const auto max_y = half_height - clearance;
-
-         std::shared_lock entities_lock(entities_mutex_);
-         for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
-             for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
-                 const math::Vector2D candidate{x, y};
-                 const auto overlaps = std::any_of(entities_.storage().begin(),
-                                                   entities_.storage().end(),
-                                                   [&candidate, clearance](const auto& slot) {
-                                                       if (!slot || slot->isDestroyed || !slot->transform) {
-                                                           return false;
-                                                       }
-                                                       const auto combined_radius = clearance + slot->radius;
-                                                       return (candidate - slot->transform->position).lengthSquared() <=
-                                                              combined_radius * combined_radius;
-                                                   });
-                 if (!overlaps) {
-                     positions.push_back(candidate);
-                 }
-             }
-         }
-         return positions;
-     }*/
+    const auto queued_actions = action_queue_.drain();
+    for (const auto& action : queued_actions) {
+        switch (action.type) {
+            case ActionType::PlayerJoin: {
+                new_players.push_back(PendingJoin{action.session_id, action.player_name});
+                break;
+            }
+            case ActionType::PlayerQuit: {
+                session_to_ship_.erase(action.session_id);
+                break;
+            }
+            case ActionType::MoveAndShoot:
+            case ActionType::Respawn:
+            default:
+                break;
+        }
+    }
 }
 
 void WorldInstance::updatePhysics(math::Scalar) {

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config.h"
@@ -373,8 +374,10 @@ private:
     boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
     std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
     mutable std::shared_mutex entities_mutex_;  ///< Защита пула сущностей от внешних читателей
-    mutable std::mutex action_mutex_;  ///< Синхронизация enqueueAction() с остановкой
-    math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
+    mutable std::mutex action_mutex_;         ///< Синхронизация enqueueAction() с остановкой
+    mutable std::mutex last_snapshot_mutex_;  ///< Защита последнего снимка мира
+    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};  ///< Последний опубликованный снимок
+    math::Scalar world_width_{world::kDefaultWidth};                        ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
