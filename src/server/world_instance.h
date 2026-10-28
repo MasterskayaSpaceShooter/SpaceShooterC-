@@ -373,38 +373,21 @@ private:
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
-    ///< Номер текущего тика
-    std::atomic<std::uint64_t> current_tick_{0};
-    ///< Очередь действий игроков
-    ThreadSafeQueue<ActionEvent> action_queue_;
-    ///< Пул сущностей мира     
-    [[maybe_unused]] domain::EntityPool entities_;
-    ///< Переиспользуемый буфер снимков между тиками  
-    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;
-    ///< Шина событий сервера  
-    std::shared_ptr<events::EventBus> event_bus_;
-    ///< Сериализация всех операций цикла  
-    boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;
-    ///< Таймер игровых тиков  
-    boost::asio::steady_timer tick_timer_;
-    ///< Интервал одного тика     
-    std::chrono::microseconds tick_interval_;
-    ///< Защита пула сущностей от внешних читателей  
-    mutable std::shared_mutex entities_mutex_;
-    ///< Синхронизация enqueueAction() с остановкой  
-    mutable std::mutex action_mutex_;
-    ///< Защита последнего снимка мира         
-    mutable std::mutex last_snapshot_mutex_;
-    ///< Последний опубликованный снимок  
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};
-    ///< Ширина мира  
-    math::Scalar world_width_{world::kDefaultWidth};
-    ///< Высота мира                        
-    math::Scalar world_height_{world::kDefaultHeight};
-    ///< Состояние жизненного цикла игрового цикла  
-    std::atomic<State> state_{State::Stopped};
-    ///< Подписка на ClientDisconnectedEvent  
-    boost::signals2::scoped_connection sub_disconnect_;
-    ///< связь сессии и корябля               
-    std::unordered_map<SessionId, types::EntityId> session_to_ship_;
+    std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
+    ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
+    [[maybe_unused]] domain::EntityPool entities_;           ///< Пул сущностей мира
+    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
+    std::shared_ptr<events::EventBus> event_bus_;            ///< Шина событий сервера
+    boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
+    boost::asio::steady_timer tick_timer_;                                     ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
+    mutable std::shared_mutex entities_mutex_;  ///< Защита пула сущностей от внешних читателей
+    mutable std::mutex action_mutex_;           ///< Синхронизация enqueueAction() с остановкой
+    mutable std::mutex last_snapshot_mutex_;    ///< Защита последнего снимка мира
+    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};  ///< Последний опубликованный снимок
+    math::Scalar world_width_{world::kDefaultWidth};                        ///< Ширина мира
+    math::Scalar world_height_{world::kDefaultHeight};                      ///< Высота мира
+    std::atomic<State> state_{State::Stopped};                        ///< Состояние жизненного цикла игрового цикла
+    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
 };
