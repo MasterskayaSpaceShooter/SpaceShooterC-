@@ -34,7 +34,6 @@ private:
     double calculateCurrentWeight() const;
 
 private:
-    double asteroids_weight_;
     std::shared_ptr<domain::EntityPool> entity_pool_;
 };
 

@@ -6,13 +6,9 @@ namespace asteroid_factory {
 
 thread_local std::mt19937 g_rng{std::random_device{}()};
 
-AsteroidFactory::AsteroidFactory(std::shared_ptr<domain::EntityPool> entity_pool) :
-    asteroids_weight_(0), entity_pool_(entity_pool) {}
+AsteroidFactory::AsteroidFactory(std::shared_ptr<domain::EntityPool> entity_pool) : entity_pool_(entity_pool) {}
 
 void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates) {
-    entity_pool_
-        ->recycleDestroyed();  // пока оставлю, как выяснится вызывают снаружи или нет приму решение убрать или оставить
-
     if (free_coordinates.empty()) {
         return;
     }
@@ -44,8 +40,6 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
         entity->health.emplace();
         entity->asteroid->score_reward = static_cast<uint16_t>(free_weight[i]);
         entity->transform->position = rand_positions[i];
-
-        asteroids_weight_ += entity->mass;
     }
 }
 
@@ -69,7 +63,7 @@ std::vector<double> AsteroidFactory::generateAsteroidWeight(const double current
     if (current_weight >= MIN_ASTEROIDS_WEIGHT) {
         return asteroids_weight;
     }
-    const size_t budget_left = MIN_ASTEROIDS_WEIGHT - current_weight;
+    const double budget_left = MIN_ASTEROIDS_WEIGHT - current_weight;
     if (budget_left < MIN_ASTEROID_WEIGHT) {
         return asteroids_weight;
     }
@@ -87,15 +81,11 @@ std::vector<double> AsteroidFactory::generateAsteroidWeight(const double current
 
 std::vector<math::Vector2D> AsteroidFactory::generatePositions(const size_t pos_count,
                                                                const std::vector<math::Vector2D>& free_coordinates) {
-    if (pos_count == 0 || free_coordinates.empty())
+    if (pos_count == 0 || free_coordinates.empty() || pos_count > free_coordinates.size())
         return {};
     std::vector<math::Vector2D> positions;
     positions.reserve(pos_count);
-    std::uniform_int_distribution<size_t> distrib(0, free_coordinates.size() - 1);
-    for (size_t i = 0; i < pos_count; ++i) {
-        size_t rand_coordinate = distrib(g_rng);
-        positions.push_back(free_coordinates[rand_coordinate]);
-    }
+    std::sample(free_coordinates.begin(), free_coordinates.end(), std::back_inserter(positions), pos_count, g_rng);
     return positions;
 }
 }  // namespace asteroid_factory
