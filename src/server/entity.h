@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <cstdint>
 #include <limits>
 #include <numbers>
@@ -12,6 +13,12 @@
 #include "types.h"
 
 namespace domain {
+
+template <typename Predicate>
+concept NothrowGrowthPredicate = std::predicate<Predicate&, const math::Vector2D&, math::Scalar> &&
+                                 requires(Predicate& predicate, const math::Vector2D& position, math::Scalar radius) {
+                                     { predicate(position, radius) } noexcept;
+                                 };
 
 // TODO: move default values to config
 // Components
@@ -71,20 +78,30 @@ struct Entity {
         return std::numbers::pi_v<math::Scalar> * radius * radius / 2.0;
     }
 
-    void addMass(math::Scalar amount) {
+    [[nodiscard]] bool addMass(math::Scalar amount) noexcept {
+        return addMass(amount, [](const math::Vector2D&, math::Scalar) noexcept {
+            return true;
+        });
+    }
+
+    [[nodiscard]] bool addMass(math::Scalar amount, NothrowGrowthPredicate auto can_grow) noexcept {
         if (type != types::EntityType::Ship) {
-            throw std::logic_error("Only ships can accumulate mass");
+            LOG_ERROR("Only ships can accumulate mass");
+            return false;
         }
         if (!std::isfinite(amount) || amount < 0.0) {
-            throw std::invalid_argument("Mass to add must be finite and non-negative");
+            LOG_ERROR("Mass to add must be finite and non-negative");
+            return false;
         }
-        if (!std::isfinite(mass) || mass < 0.0 || !std::isfinite(radius) || radius <= 0.0) {
-            throw std::logic_error("Ship must have a valid mass and radius");
+        if (!std::isfinite(mass) || mass < 0.0 || !std::isfinite(radius) || radius <= 0.0 || !transform) {
+            LOG_ERROR("Ship must have a valid mass and radius");
+            return false;
         }
 
         const math::Scalar new_mass = mass + amount;
         if (!std::isfinite(new_mass)) {
-            throw std::overflow_error("Ship mass overflow");
+            LOG_ERROR("Ship mass overflow");
+            return false;
         }
 
         mass = new_mass;
@@ -94,8 +111,19 @@ struct Entity {
             if (!std::isfinite(target_mass) || mass < target_mass) {
                 break;
             }
+
+            if (!transform.has_value()) {
+                LOG_ERROR("Ship has no transform");
+                return false;
+            }
+
+            if (!can_grow(transform->position, next_radius)) {
+                break;
+            }
+
             radius = next_radius;
         }
+        return true;
     }
 
     [[nodiscard]] bool isValid() const noexcept {

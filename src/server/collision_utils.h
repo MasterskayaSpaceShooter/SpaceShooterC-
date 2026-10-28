@@ -55,8 +55,9 @@ inline void onCollision(Entity& ship, Entity& asteroid) {
     // 2. Съедобный диапазон (от 20% до 50% массы корабля):
     // Корабль впитывает массу астероида
     if (mass_ratio < 0.5) {
-        ship.addMass(asteroid.mass);
-        asteroid.isDestroyed = true;
+        if (ship.addMass(asteroid.mass)) {
+            asteroid.isDestroyed = true;
+        }
         return;
     }
 

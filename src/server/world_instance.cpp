@@ -7,8 +7,8 @@
 #include <string>
 #include <utility>
 
-#include "entity_utils.h"
 #include "collision_utils.h"
+#include "entity_utils.h"
 #include "logger.h"
 #include "network_response_router.h"
 
@@ -235,98 +235,54 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
 }
 
 void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
-std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
-    std::lock_guard lock(last_snapshot_mutex_);
-    return last_snapshot_;
-}
+    /* std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const {
+         std::lock_guard lock(last_snapshot_mutex_);
+         return last_snapshot_;
+     }
 
-std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
-    if (count == 0) {
-        return {};
-    }
-    if (!std::isfinite(clearance) || clearance < 0.0) {
-        throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
-    }
 
-    const auto half_width = world_width_ * 0.5;
-    const auto half_height = world_height_ * 0.5;
-    if (clearance > half_width || clearance > half_height) {
-        return {};
-    }
+     std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math::Scalar clearance) const {
+         if (count == 0) {
+             return {};
+         }
+         if (!std::isfinite(clearance) || clearance < 0.0) {
+             throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
+         }
 
-    std::vector<math::Vector2D> positions;
-    const auto spacing = std::max(2.0 * clearance, 1.0);
-    const auto min_x = -half_width + clearance;
-    const auto max_x = half_width - clearance;
-    const auto min_y = -half_height + clearance;
-    const auto max_y = half_height - clearance;
+         const auto half_width = world_width_ * 0.5;
+         const auto half_height = world_height_ * 0.5;
+         if (clearance > half_width || clearance > half_height) {
+             return {};
+         }
 
-    std::shared_lock entities_lock(entities_mutex_);
-    for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
-        for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
-            const math::Vector2D candidate{x, y};
-            const auto overlaps = std::any_of(entities_.storage().begin(),
-                                              entities_.storage().end(),
-                                              [&candidate, clearance](const auto& slot) {
-                                                  if (!slot || slot->isDestroyed || !slot->transform) {
-                                                      return false;
-                                                  }
-                                                  const auto combined_radius = clearance + slot->radius;
-                                                  return (candidate - slot->transform->position).lengthSquared() <=
-                                                         combined_radius * combined_radius;
-                                              });
-            if (!overlaps) {
-                positions.push_back(candidate);
-            }
-        }
-    }
-    return positions;
-}
+         std::vector<math::Vector2D> positions;
+         const auto spacing = std::max(2.0 * clearance, 1.0);
+         const auto min_x = -half_width + clearance;
+         const auto max_x = half_width - clearance;
+         const auto min_y = -half_height + clearance;
+         const auto max_y = half_height - clearance;
 
-void WorldInstance::processInputQueue() {
-    auto actions = action_queue_.drain();
-    if (actions.empty()) {
-        return;
-    }
-
-    // проходимся по всем действиям игроков которые есть в игре.
-    for (const auto& action : actions) {
-        switch (action.type) {
-            case ActionType::PlayerJoin: {
-                // Корабль создаётся в spawnShips() в конце тика (после физики).
-                // Здесь копим сессию и имя: приветственный снимок новичку уйдёт
-                // после появления его корабля на свободной позиции.
-                new_players.push_back(PendingJoin{action.session_id, action.player_name});
-                break;
-            }
-            case ActionType::PlayerQuit: {
-                /* Достаём EntityId мапы session_to_ship_ по action.session_id, находим в EntityPool нужный корабль и
-                 * помечаем удалённым, выходим из цикла и удаляем связь из мапы session_to_ship_, в конце вызываем
-                 * entities_.recycleDestroyed(), он сам удалит помеченные мертвыми корабли из памяти */
-                auto it = session_to_ship_.find(action.session_id);
-                if (it != session_to_ship_.end()) {
-                    auto ship_id = it->second;
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            entity->isDestroyed = true;
-                            break;
-                        }
-                    }
-                    session_to_ship_.erase(action.session_id);
-                }
-                break;
-            }
-            case ActionType::MoveAndShoot:
-                /* code */
-                break;
-            case ActionType::Respawn:
-                /* code */
-                break;
-            default:
-                break;
-        }
-    }
-    entities_.recycleDestroyed();
+         std::shared_lock entities_lock(entities_mutex_);
+         for (auto y = min_y; y <= max_y && positions.size() < count; y += spacing) {
+             for (auto x = min_x; x <= max_x && positions.size() < count; x += spacing) {
+                 const math::Vector2D candidate{x, y};
+                 const auto overlaps = std::any_of(entities_.storage().begin(),
+                                                   entities_.storage().end(),
+                                                   [&candidate, clearance](const auto& slot) {
+                                                       if (!slot || slot->isDestroyed || !slot->transform) {
+                                                           return false;
+                                                       }
+                                                       const auto combined_radius = clearance + slot->radius;
+                                                       return (candidate - slot->transform->position).lengthSquared() <=
+                                                              combined_radius * combined_radius;
+                                                   });
+                 if (!overlaps) {
+                     positions.push_back(candidate);
+                 }
+             }
+         }
+         return positions;
+     }*/
 }
 
 void WorldInstance::updatePhysics(math::Scalar) {

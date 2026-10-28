@@ -72,7 +72,7 @@ TEST(ShipAsteroidCollisionTest, GrowsMultipleLevelsWhenMassIsAddedAtOnce) {
     auto ship = MakeShip(domain::Entity::massForRadius(domain::Entity::kInitialShipRadius));
     ship.radius = domain::Entity::kInitialShipRadius;
 
-    ship.addMass(10000.0);
+    EXPECT_TRUE(ship.addMass(10000.0));
 
     EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius * 8.0);
 }
