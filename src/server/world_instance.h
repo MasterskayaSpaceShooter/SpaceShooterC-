@@ -393,14 +393,17 @@ private:
     std::atomic<std::uint64_t> current_tick_{0};                               ///< Номер текущего тика
     ThreadSafeQueue<ActionEvent> action_queue_;                                ///< Очередь действий игроков
     [[maybe_unused]] domain::EntityPool entities_;                             ///< Пул сущностей мира
+    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;                    ///< Переиспользуемый буфер снимков
     std::shared_ptr<events::EventBus> event_bus_;                              ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
     boost::asio::steady_timer tick_timer_;                                     ///< Таймер игровых тиков
     std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
     math::Scalar world_width_{world::kDefaultWidth};                           ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};                         ///< Высота мира
-    std::atomic<State> state_{State::Stopped};                                 ///< Состояние жизненного цикла игрового цикла
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;              ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;                                   ///< Защита last_snapshot_
-    boost::signals2::scoped_connection sub_disconnect_;                        ///< Подписка на ClientDisconnectedEvent
+    std::atomic<State> state_{State::Stopped};                        ///< Состояние жизненного цикла игрового цикла
+    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корабля
+    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;     ///< Последний снимок мира
+    mutable std::mutex last_snapshot_mutex_;  ///< Защита last_snapshot_                        ///< Подписка на
+                                              ///< ClientDisconnectedEvent
 };

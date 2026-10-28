@@ -392,29 +392,15 @@ std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const 
 }
 
 snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
-    std::vector<snapshot::EntitySnapshot> snapshots;
-
-    auto& storage = const_cast<domain::EntityPool&>(entities_).storage();
-    for (const auto& slot : storage) {
-        if (slot.has_value()) {
-            // ... (тут логика конвертации domain::Entity в snapshot::EntitySnapshot)
-        }
-    }
+    // Собираем снимки сущностей (логика из main)
+    domain::buildEntitySnapshots(entities_, snapshot_buffer_);
 
     // Собираем таблицу лидеров
     auto leaderboard = buildLeaderboard();
 
-    // Возвращаем снапшот
-    return snapshot::GameSnapshot(std::move(snapshots),
-                                  std::move(leaderboard),
-                                  static_cast<std::uint32_t>(current_tick_.load()));
-}
-
-snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
-    domain::buildEntitySnapshots(entities_, snapshot_buffer_);
+    // Возвращаем GameSnapshot с тремя аргументами
     const auto tick_number = static_cast<std::uint32_t>(current_tick_.load());
-    // Копируем, чтобы переиспользовать буфер на следующем тике (ёмкость сохраняется).
-    return snapshot::GameSnapshot{snapshot_buffer_, tick_number};
+    return snapshot::GameSnapshot{snapshot_buffer_, std::move(leaderboard), tick_number};
 }
 
 void WorldInstance::broadcastSnapshot(const snapshot::GameSnapshot& snapshot) {
