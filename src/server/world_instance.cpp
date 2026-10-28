@@ -304,42 +304,34 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
+                    domain::Entity* ship = nullptr;
 
-                    math::Vector2D ship_position;
-                    math::Scalar ship_angle;
-                    math::Scalar ship_radius;
-                    bool ship_found = false;
                     for (auto& entity : entities_.storage()) {
                         if (entity.has_value() && entity->id == ship_id) {
                             if (entity->transform.has_value()) {
                                 if (action.move_direction.lengthSquared() > 0) {
-                                    // TODO: описать изменение движения, задача № ???
+                                    entity->transform->velocity = action.move_direction;
                                 }
-                                ship_found = true;
-                                ship_position = entity->transform->position;
-                                ship_angle = entity->transform->angle;
-                                ship_radius = entity->radius;
+                                ship = &(*entity);
                                 break;
                             }
                         }
                     }
 
-                    if (ship_found) {
-                        if (action.is_shooting) {
-                            auto bullet = entities_.acquire();
-                            bullet->type = types::EntityType::Bullet;
-                            bullet->radius = world::kBulletRadius;
-                            bullet->transform = domain::TransformComponent{};
-                            bullet->combat = domain::CombatComponent{};
+                    if (ship && action.is_shooting) {
+                        auto bullet = entities_.acquire();
+                        bullet->type = types::EntityType::Bullet;
+                        bullet->radius = world::kBulletRadius;
+                        bullet->transform = domain::TransformComponent{};
+                        bullet->combat = domain::CombatComponent{};
 
-                            auto angle = ship_angle;
-                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
-                            bullet->transform->position = ship_position + (direction * ship_radius);
-                            bullet->transform->velocity = direction * world::kBulletSpeed;
+                        auto angle = ship->transform->angle;
+                        math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                        bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                        bullet->transform->velocity = direction * world::kBulletSpeed;
 
-                            bullet->combat->owner_id = ship_id;
-                            bullet->combat->damage = world::kBulletDamage;
-                        }
+                        bullet->combat->owner_id = ship_id;
+                        bullet->combat->damage = world::kBulletDamage;
                     }
                 }
                 break;
