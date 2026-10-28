@@ -51,11 +51,6 @@ void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& 
     LOG_INFO("[NetworkResponseRouter] Клиент отключен: session_id={}", event.session_id);
 }
 
-void NetworkResponseRouter::onShotReceived(const ShotMessageEvent& event) {
-    LOG_INFO("[NetworkResponseRouter] Получен SHOOT от session_id={}", event.session_id);
-    event_bus_->publish(ShotHappenedEvent{event.session_id});
-}
-
 void NetworkResponseRouter::setupSubscriptions() {
     // Захватываем слабый указатель на себя, чтобы не держать объект живым в слотах шины
     // и избежать вызова на освобождённом объекте при конкурентной публикации см. примечание
@@ -80,12 +75,6 @@ void NetworkResponseRouter::setupSubscriptions() {
                 s->onClientDisconnected(event);
             }
         }));
-
-    subscriptions_.emplace_back(event_bus_->subscribe<ShotMessageEvent>([self](const ShotMessageEvent& event) {
-        if (auto s = self.lock()) {
-            s->onShotReceived(event);
-        }
-    }));
 }
 
 void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {

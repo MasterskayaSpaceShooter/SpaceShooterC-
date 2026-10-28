@@ -95,11 +95,3 @@ struct ClientDisconnectedEvent : public NetworkEvent {
 struct ShotMessageEvent : public NetworkEvent {
     explicit ShotMessageEvent(SessionId id) : NetworkEvent(id) {}
 };
-
-/**
- * @brief Событие: Выстрел принят к обработке игровой логикой.
- * @details Генерируется NetworkResponseRouter::onShotReceived после получения ShotMessageEvent.
- */
-struct ShotHappenedEvent : public NetworkEvent {
-    explicit ShotHappenedEvent(SessionId id) : NetworkEvent(id) {}
-};
