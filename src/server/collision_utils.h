@@ -21,9 +21,9 @@ inline void repelAsteroid(Entity&, Entity&) {}
  * The ship must be the first argument. Entities without the required
  * components, invalid masses, and destroyed entities are ignored.
  */
-inline void onCollision(Entity& ship, Entity& asteroid) {
+inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid) {
     if (ship.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Ship) {
-        onCollision(asteroid, ship);
+        onCollisionShipAsteroid(asteroid, ship);
         return;
     }
 

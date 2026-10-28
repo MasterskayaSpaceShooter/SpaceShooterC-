@@ -314,8 +314,8 @@ void WorldInstance::resolveCollisions() {
     // TODO: найти пересечения сущностей и вызвать соответствующие onCollision().
 }
 
-void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
-    domain::collision::onCollision(ship, asteroid);
+void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
