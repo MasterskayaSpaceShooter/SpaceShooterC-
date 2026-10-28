@@ -360,7 +360,7 @@ private:
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
     // TODO: реализовать остальные обработчики коллизий.
-    // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
+    void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollision(domain::Entity& ship, domain::Entity& asteroid);
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
