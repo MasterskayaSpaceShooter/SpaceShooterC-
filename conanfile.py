@@ -9,7 +9,6 @@ class NetworkProjectRecipe(ConanFile):
 
     def requirements(self):
         self.requires("boost/1.86.0")
-        self.requires("gtest/1.15.0")
         self.requires("flatbuffers/25.12.19")
 
     def build_requirements(self):
