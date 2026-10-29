@@ -379,21 +379,21 @@ private:
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
-    std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
-    ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
-    [[maybe_unused]] domain::EntityPool entities_;           ///< Пул сущностей мира
+    std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
+    ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
+    [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
     std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
-    std::shared_ptr<events::EventBus> event_bus_;            ///< Шина событий сервера
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
-    boost::asio::steady_timer tick_timer_;                                     ///< Таймер игровых тиков
-    std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
+    boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
     mutable std::shared_mutex entities_mutex_;  ///< Защита пула сущностей от внешних читателей
-    mutable std::mutex action_mutex_;           ///< Синхронизация enqueueAction() с остановкой
-    mutable std::mutex last_snapshot_mutex_;    ///< Защита последнего снимка мира
+    mutable std::mutex action_mutex_;         ///< Синхронизация enqueueAction() с остановкой
+    mutable std::mutex last_snapshot_mutex_;  ///< Защита последнего снимка мира
     std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};  ///< Последний опубликованный снимок
     math::Scalar world_width_{world::kDefaultWidth};                        ///< Ширина мира
-    math::Scalar world_height_{world::kDefaultHeight};                      ///< Высота мира
-    std::atomic<State> state_{State::Stopped};                        ///< Состояние жизненного цикла игрового цикла
+    math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
+    std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     boost::signals2::scoped_connection sub_player_join_;              ///< Подписка на PlayerJoinEvent
