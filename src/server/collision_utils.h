@@ -6,6 +6,7 @@
 
 #include "entity.h"
 #include "health_utils.h"
+#include "logger.h"
 #include "score_utils.h"
 
 namespace domain::collision {
@@ -87,22 +88,28 @@ inline void onCollision(Entity& ship, Entity& asteroid) {
  */
 inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
     if (ship1.type != types::EntityType::Ship || ship2.type != types::EntityType::Ship) {
+        LOG_WARN("[Collision] Ship-ship collision ignored: entities {} and {} are not ships",
+                 ship1.id.get(),
+                 ship2.id.get());
         return;
     }
 
     if (!ship1.isValid() || !ship2.isValid()) {
+        LOG_WARN("[Collision] Ship-ship collision ignored: invalid entities {} and {}", ship1.id.get(), ship2.id.get());
         return;
     }
 
     if (!ship1.isDamageable() || !ship2.isDamageable()) {
+        LOG_WARN("[Collision] Ship-ship collision ignored: entities {} and {} are not damageable",
+                 ship1.id.get(),
+                 ship2.id.get());
         return;
     }
 
     if (!ship1.ship || !ship2.ship) {
-        return;
-    }
-
-    if (ship1.mass <= 0.0 || ship2.mass <= 0.0) {
+        LOG_WARN("[Collision] Ship-ship collision ignored: missing ship component for entities {} and {}",
+                 ship1.id.get(),
+                 ship2.id.get());
         return;
     }
 
