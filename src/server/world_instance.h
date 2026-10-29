@@ -22,11 +22,11 @@
 #include "thread_safe_queue.h"
 #include "types.h"
 
-enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
+enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
 struct ActionEvent {
     SessionId session_id{};
-    ActionType type{ActionType::PlayerJoin};
+    ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
     bool is_shooting{false};

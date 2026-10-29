@@ -19,6 +19,17 @@ public:
     static auto GetSessionToShip(const WorldInstance& world) {
         return world.session_to_ship_;
     }
+
+    // Возвращает кол-во слотов помеченных мервыми
+    static auto GetEntityCountWithStatusAlive(const WorldInstance& world) {
+        size_t count = 0;
+        for (const auto& slot : world.entities_.storage()) {
+            if (slot.has_value() && !slot->isDestroyed) {
+                count++;
+            }
+        }
+        return count;
+    }
 };
 
 TEST(WorldInstance, CreateWithNullEventBusThrows) {
@@ -134,65 +145,115 @@ TEST(WorldInstance, StopWaitsForTickLoopToStop) {
 
 // Проверка получения события PlayerJoinEvent в очередь действий
 TEST(WorldInstance, ReceivedPlayerJoin) {
-    boost::asio::io_context io_context;
+    NetworkContext nc(1);
     auto event_bus = events::EventBus::create();
-    auto world = WorldInstance::create(io_context, event_bus, 100.0);
-
-    auto actions = WorldInstanceTestAccessor::drainActions(*world);
-    EXPECT_EQ(actions.size(), 0);
-
+    auto world = WorldInstance::create(nc.getContext(), event_bus, 100.0);
+    world->start();
+    nc.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     event_bus->publish(PlayerJoinEvent{42, "TestName"});
 
-    io_context.run_for(std::chrono::milliseconds(10));
-    io_context.restart();
-
-    actions = WorldInstanceTestAccessor::drainActions(*world);
-
-    ASSERT_EQ(actions.size(), 1);
-    EXPECT_EQ(actions[0].type, ActionType::PlayerJoin);
-    EXPECT_EQ(actions[0].session_id, 42);
-    EXPECT_EQ(actions[0].player_name, "TestName");
-}
-
-// Проверка записи в мапу session_to_ship_ связи сущности корабля и сессии
-TEST(WorldInstance, CreateSessionToShipAfterPlayerJoin) {
-    boost::asio::io_context io_context;
-    auto event_bus = events::EventBus::create();
-    auto world = WorldInstance::create(io_context, event_bus, 100.0);
-
-    // игрок присоединяется к игре
-    event_bus->publish(PlayerJoinEvent{42, "TestName"});
-
-    io_context.run_for(std::chrono::milliseconds(10));
-    io_context.restart();
+    // ждём пока заполниться мапа
+    const auto map_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetSessionToShip(*world).size() == 0 &&
+           std::chrono::steady_clock::now() < map_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
     auto session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
     EXPECT_EQ(session_to_ship.size(), 1);
+
+    world->stop();
+    nc.force_stop();
+    nc.wait();
 }
 
+// Проверка получения события ClientDisconnectedEvent в очередь действий
 TEST(WorldInstance, ReceivedPlayerQuit) {
-    boost::asio::io_context io_context;
+    NetworkContext nc(1);
     auto event_bus = events::EventBus::create();
-    auto world = WorldInstance::create(io_context, event_bus, 100.0);
+    auto world = WorldInstance::create(nc.getContext(), event_bus, 100.0);
+    nc.start();
+    world->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
     event_bus->publish(PlayerJoinEvent{42, "TestName"});
+    // ждём пока заполниться мапа
+    const auto map_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetSessionToShip(*world).size() == 0 &&
+           std::chrono::steady_clock::now() < map_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
-    io_context.run_for(std::chrono::milliseconds(30));
-    io_context.restart();
-
-    auto session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
-    EXPECT_EQ(session_to_ship.size(), 1);
-
-    // Сбрасываем очеред, чтобы PlayerJoin не мешал
-    // WorldInstanceTestAccessor::drainActions(*world);
+    // Проверяем, что корабль и связь есть
+    EXPECT_EQ(WorldInstanceTestAccessor::GetSessionToShip(*world).size(), 1);
 
     event_bus->publish(ClientDisconnectedEvent{42});
+    const auto delete_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetSessionToShip(*world).size() > 0 &&
+           std::chrono::steady_clock::now() < delete_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
 
-    auto actions = WorldInstanceTestAccessor::drainActions(*world);
+    // Проверяем, что корабля и связи нет
+    EXPECT_EQ(WorldInstanceTestAccessor::GetSessionToShip(*world).size(), 0);
 
-    io_context.run_for(std::chrono::milliseconds(20));
-    io_context.restart();
+    world->stop();
+    nc.force_stop();
+    nc.wait();
+}
 
-    session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
-    EXPECT_EQ(session_to_ship.size(), 0);
+// Проверка пула сущностей при PlayerJoin
+TEST(WorldInstance, StatusEntityPoolPlayerJoin) {
+    NetworkContext nc(1);
+    auto event_bus = events::EventBus::create();
+    auto world = WorldInstance::create(nc.getContext(), event_bus, 100.0);
+    nc.start();
+    world->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    event_bus->publish(PlayerJoinEvent{42, "TestName"});
+    const auto pool_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetEntityCountWithStatusAlive(*world) == 0 &&
+           std::chrono::steady_clock::now() < pool_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Проверяем, что корабль в пуле сущностей
+    EXPECT_EQ(WorldInstanceTestAccessor::GetEntityCountWithStatusAlive(*world), 1);
+
+    world->stop();
+    nc.force_stop();
+    nc.wait();
+}
+
+// Проверка пула сущностей при ClientDisconnectedEvent
+TEST(WorldInstance, StatusEntityPoolPlayerQuit) {
+    NetworkContext nc(1);
+    auto event_bus = events::EventBus::create();
+    auto world = WorldInstance::create(nc.getContext(), event_bus, 100.0);
+    nc.start();
+    world->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    // подлючение клиента и отключение
+    event_bus->publish(PlayerJoinEvent{42, "TestName"});
+    const auto pool_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetEntityCountWithStatusAlive(*world) == 0 &&
+           std::chrono::steady_clock::now() < pool_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    event_bus->publish(ClientDisconnectedEvent{42});
+    const auto delete_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (WorldInstanceTestAccessor::GetEntityCountWithStatusAlive(*world) > 0 &&
+           std::chrono::steady_clock::now() < delete_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    // Проверяем, что корабль в пуле сущностей
+    EXPECT_EQ(WorldInstanceTestAccessor::GetEntityCountWithStatusAlive(*world), 0);
+
+    world->stop();
+    nc.force_stop();
+    nc.wait();
 }

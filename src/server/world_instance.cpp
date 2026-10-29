@@ -291,11 +291,33 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
     for (const auto& action : queued_actions) {
         switch (action.type) {
             case ActionType::PlayerJoin: {
+                auto it = std::find_if(new_players.begin(), new_players.end(), [&action](const PendingJoin& p) {
+                    return p.session_id == action.session_id;
+                });
+
+                if (it != new_players.end()) {
+                    // пропускаем игрока, если тот уже есть в new_players
+                    LOG_WARN("[WorldInstance] Duplicate PlayerJoin for session {}, ignoring", action.session_id);
+                    break;
+                }
                 new_players.push_back(PendingJoin{action.session_id, action.player_name});
                 break;
             }
             case ActionType::PlayerQuit: {
-                session_to_ship_.erase(action.session_id);
+                /* Достаём EntityId мапы session_to_ship_ по action.session_id, находим в EntityPool нужный корабль и
+                 * помечаем удалённым, выходим из цикла и удаляем связь из мапы session_to_ship_, в конце вызываем
+                 * entities_.recycleDestroyed(), он сам удалит помеченные мертвыми корабли из памяти */
+                auto it = session_to_ship_.find(action.session_id);
+                if (it != session_to_ship_.end()) {
+                    auto ship_id = it->second;
+                    for (auto& entity : entities_.storage()) {
+                        if (entity.has_value() && entity->id == ship_id) {
+                            entity->isDestroyed = true;
+                            break;
+                        }
+                    }
+                    session_to_ship_.erase(action.session_id);
+                }
                 break;
             }
             case ActionType::MoveAndShoot:
@@ -304,6 +326,7 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 break;
         }
     }
+    entities_.recycleDestroyed();
 }
 
 void WorldInstance::updatePhysics(math::Scalar) {
