@@ -7,6 +7,20 @@
 #include "network_context.h"
 #include "world_instance.h"
 
+/// Вспомогательный класс для доступа к приватным полям WI в тестах.
+class WorldInstanceTestAccessor {
+public:
+    // Возвращает накопленные действия из action_queue_
+    static std::vector<ActionEvent> drainActions(WorldInstance& world) {
+        return world.action_queue_.drain();
+    }
+
+    // Возвращает мапу session_to_ship_
+    static auto GetSessionToShip(const WorldInstance& world) {
+        return world.session_to_ship_;
+    }
+};
+
 TEST(WorldInstance, CreateWithNullEventBusThrows) {
     boost::asio::io_context io_context;
 
@@ -116,4 +130,69 @@ TEST(WorldInstance, StopWaitsForTickLoopToStop) {
 
     nc.stop();
     nc.wait();
+}
+
+// Проверка получения события PlayerJoinEvent в очередь действий
+TEST(WorldInstance, ReceivedPlayerJoin) {
+    boost::asio::io_context io_context;
+    auto event_bus = events::EventBus::create();
+    auto world = WorldInstance::create(io_context, event_bus, 100.0);
+
+    auto actions = WorldInstanceTestAccessor::drainActions(*world);
+    EXPECT_EQ(actions.size(), 0);
+
+    event_bus->publish(PlayerJoinEvent{42, "TestName"});
+
+    io_context.run_for(std::chrono::milliseconds(10));
+    io_context.restart();
+
+    actions = WorldInstanceTestAccessor::drainActions(*world);
+
+    ASSERT_EQ(actions.size(), 1);
+    EXPECT_EQ(actions[0].type, ActionType::PlayerJoin);
+    EXPECT_EQ(actions[0].session_id, 42);
+    EXPECT_EQ(actions[0].player_name, "TestName");
+}
+
+// Проверка записи в мапу session_to_ship_ связи сущности корабля и сессии
+TEST(WorldInstance, CreateSessionToShipAfterPlayerJoin) {
+    boost::asio::io_context io_context;
+    auto event_bus = events::EventBus::create();
+    auto world = WorldInstance::create(io_context, event_bus, 100.0);
+
+    // игрок присоединяется к игре
+    event_bus->publish(PlayerJoinEvent{42, "TestName"});
+
+    io_context.run_for(std::chrono::milliseconds(10));
+    io_context.restart();
+
+    auto session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
+    EXPECT_EQ(session_to_ship.size(), 1);
+}
+
+TEST(WorldInstance, ReceivedPlayerQuit) {
+    boost::asio::io_context io_context;
+    auto event_bus = events::EventBus::create();
+    auto world = WorldInstance::create(io_context, event_bus, 100.0);
+
+    event_bus->publish(PlayerJoinEvent{42, "TestName"});
+
+    io_context.run_for(std::chrono::milliseconds(30));
+    io_context.restart();
+
+    auto session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
+    EXPECT_EQ(session_to_ship.size(), 1);
+
+    // Сбрасываем очеред, чтобы PlayerJoin не мешал
+    // WorldInstanceTestAccessor::drainActions(*world);
+
+    event_bus->publish(ClientDisconnectedEvent{42});
+
+    auto actions = WorldInstanceTestAccessor::drainActions(*world);
+
+    io_context.run_for(std::chrono::milliseconds(20));
+    io_context.restart();
+
+    session_to_ship = WorldInstanceTestAccessor::GetSessionToShip(*world);
+    EXPECT_EQ(session_to_ship.size(), 0);
 }

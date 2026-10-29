@@ -367,6 +367,12 @@ private:
      */
     void onPlayerJoin(const PlayerJoinEvent& event);
 
+    /**
+     * @brief Разрешает тестовому классу доступ к приватным данным WI
+     * @warning Используется только для тестов.
+     */
+    friend class WorldInstanceTestAccessor;
+
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
     void onCollision(domain::Entity& ship, domain::Entity& asteroid);
