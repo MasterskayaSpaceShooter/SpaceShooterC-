@@ -379,9 +379,7 @@ std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const 
         }
     }
 
-    // Оставляем топ-10
-    constexpr size_t kMaxLeaderboardSize = 10;
-    const size_t top_count = std::min(kMaxLeaderboardSize, top_players.size());
+    const size_t top_count = std::min(world::kMaxLeaderboardSize, top_players.size());
 
     std::partial_sort(top_players.begin(),
                       top_players.begin() + top_count,

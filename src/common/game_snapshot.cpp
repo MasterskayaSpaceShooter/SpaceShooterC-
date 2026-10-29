@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "entity_snapshot_serder.h"
+#include "config.h"
 
 namespace snapshot {
 namespace {
@@ -118,6 +119,12 @@ GameSnapshot GameSnapshot::Deserialize(const std::vector<std::uint8_t>& buffer) 
 
     // --- Десериализация лидерборда ---
     const std::uint32_t leaderboard_count = reader.readU32();
+    constexpr std::size_t kMinLeaderboardEntrySize = 32 + sizeof(std::uint32_t);
+    if (leaderboard_count > world::kMaxLeaderboardSize ||
+        leaderboard_count > reader.remaining() / kMinLeaderboardEntrySize) {
+        throw std::invalid_argument(
+            "GameSnapshot::Deserialize: impossible leaderboard count");
+    }
     std::vector<LeaderboardEntry> leaderboard;
     leaderboard.reserve(leaderboard_count);
     for (std::uint32_t i = 0; i < leaderboard_count; ++i) {
