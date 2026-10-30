@@ -3,11 +3,13 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-
 #include "entity.h"
 #include "health_utils.h"
 #include "logger.h"
 #include "score_utils.h"
+#include <utility>
+
+
 
 namespace domain::collision {
 
@@ -25,9 +27,9 @@ inline void repelAsteroid(Entity&, Entity&) {}
  * The ship must be the first argument. Entities without the required
  * components, invalid masses, and destroyed entities are ignored.
  */
-inline void onCollision(Entity& ship, Entity& asteroid) {
+inline void onCollision(Entity& ship, Entity& asteroid, NothrowGrowthPredicate auto can_grow) {
     if (ship.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Ship) {
-        onCollision(asteroid, ship);
+        onCollision(asteroid, ship, std::move(can_grow));
         return;
     }
 
@@ -59,8 +61,11 @@ inline void onCollision(Entity& ship, Entity& asteroid) {
     // 2. Съедобный диапазон (от 20% до 50% массы корабля):
     // Корабль впитывает массу астероида
     if (mass_ratio < 0.5) {
-        if (ship.addMass(asteroid.mass)) {
+        if (ship.addMass(asteroid.mass, can_grow)) {
             asteroid.isDestroyed = true;
+            if (ship.ship && asteroid.asteroid) {
+                addScore(*ship.ship, asteroid.asteroid->score_reward);
+            }
         }
         return;
     }
@@ -156,6 +161,12 @@ inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
             ++ship1.ship->frags;
         }
     }
+}
+
+inline void onCollision(Entity& ship, Entity& asteroid) {
+    onCollision(ship, asteroid, [](const math::Vector2D&, math::Scalar) noexcept {
+        return true;
+    });
 }
 
 }  // namespace domain::collision
