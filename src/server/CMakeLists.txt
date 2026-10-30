@@ -18,6 +18,8 @@ add_library(server STATIC
     thread_safe_queue.h
     world_instance.cpp
     world_instance.h
+    ship_physics.h
+    ship_physics.cpp
 )
 
 # PUBLIC: include-пути и зависимости транзитивны для server_app и тестов
