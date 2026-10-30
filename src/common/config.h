@@ -11,7 +11,6 @@ inline constexpr double kDefaultTickRateHz = 60.0;  ///< Частота тико
 inline constexpr std::int64_t kMaxMissedTicks = 1;  ///< Допустимое отставание каденции в интервалах тика
 inline constexpr math::Scalar kDefaultWidth = 2000.0;   ///< Ширина мира по умолчанию
 inline constexpr math::Scalar kDefaultHeight = 2000.0;  ///< Высота мира по умолчанию
-inline constexpr math::Scalar kDefaultClearance = 30.0;  ///< Зазор «запретной» окружности кандидата
 
 // Параметры корабля игрока по умолчанию.
 inline constexpr math::Scalar kShipDefaultMass = 78.54;       ///< Масса корабля
