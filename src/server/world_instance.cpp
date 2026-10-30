@@ -314,6 +314,10 @@ void WorldInstance::resolveCollisions() {
     // TODO: найти пересечения сущностей и вызвать соответствующие onCollision().
 }
 
+void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
+    domain::collision::onCollisionShipShip(ship1, ship2);
+}
+
 void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
     domain::collision::onCollision(ship, asteroid);
 }
