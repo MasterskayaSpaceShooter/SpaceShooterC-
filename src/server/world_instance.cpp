@@ -393,8 +393,20 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
 }
 
 void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
-    (void)proj;
-    (void)ship;
+    domain::collision::onCollisionBulletShip(proj, ship, [this](types::EntityId owner_id, bool ship_destroyed) {
+        for (auto& slot : entities_.storage()) {
+            if (!slot || slot->isDestroyed || slot->id != owner_id) {
+                continue;
+            }
+
+            if (slot->type != types::EntityType::Ship || !slot->ship) {
+                return;
+            }
+
+            domain::addScore(*slot->ship, ship_destroyed ? 50 : 5);
+            return;
+        }
+    });
 }
 
 void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {

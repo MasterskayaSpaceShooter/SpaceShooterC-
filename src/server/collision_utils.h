@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 
 #include "entity.h"
@@ -156,6 +157,38 @@ inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
             ++ship1.ship->frags;
         }
     }
+
+ * @brief Resolves a collision between a bullet and a ship.
+ *
+ * The callback receives the bullet owner ID and whether the ship was destroyed.
+ */
+template <typename OnHit>
+inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) {
+    if (bullet.type != types::EntityType::Bullet || ship.type != types::EntityType::Ship) {
+        return;
+    }
+
+    if (!bullet.isValid() || !ship.isValid()) {
+        return;
+    }
+
+    if (!bullet.combat || !ship.health || !ship.ship || !ship.isDamageable()) {
+        return;
+    }
+
+    constexpr std::uint16_t kBulletDamage = 25;
+    const types::EntityId owner_id = bullet.combat->owner_id;
+
+    domain::applyDamage(*ship.health, kBulletDamage);
+
+    bullet.isDestroyed = true;
+
+    const bool ship_destroyed = !domain::isAlive(*ship.health);
+    if (ship_destroyed) {
+        ship.isDestroyed = true;
+    }
+
+    on_hit(owner_id, ship_destroyed);
 }
 
 }  // namespace domain::collision
