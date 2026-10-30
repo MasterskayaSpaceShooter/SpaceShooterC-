@@ -191,4 +191,70 @@ TEST(ShipAsteroidCollisionTest, CoincidentEntitiesLeaveVelocitiesUnchangedWithRe
     EXPECT_EQ(asteroid.transform->velocity, (math::Vector2D{}));
 }
 
+TEST(ShipAsteroidCollisionTest, GrowAtWall_ClampsPosition) {
+    constexpr math::Scalar half_width  = 1000.0;
+    constexpr math::Scalar half_height = 1000.0;
+
+    auto ship = MakeShip(2.0 * domain::Entity::massForRadius(100.0));
+    ship.radius = 50.0;
+    ship.transform->position = {950.0, 0.0};
+
+    auto asteroid = MakeAsteroid(0.4 * ship.mass);   // ratio 0.4 — съедобно
+    asteroid.asteroid->score_reward = 10;
+
+    const auto can_grow = [half_width, half_height]
+                          (math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+        const auto min_x = -half_width  + radius;
+        const auto max_x =  half_width  - radius;
+        const auto min_y = -half_height + radius;
+        const auto max_y =  half_height - radius;
+        if (min_x > max_x || min_y > max_y) return false;
+        position.x = std::clamp(position.x, min_x, max_x);
+        position.y = std::clamp(position.y, min_y, max_y);
+        return true;
+    };
+
+    domain::collision::onCollision(ship, asteroid, can_grow);
+
+    EXPECT_TRUE(asteroid.isDestroyed);
+    EXPECT_EQ(ship.ship->score, 10u);
+    EXPECT_DOUBLE_EQ(ship.radius, 100.0);
+    EXPECT_DOUBLE_EQ(ship.transform->position.x, 900.0);   // clamp сработал
+    EXPECT_DOUBLE_EQ(ship.transform->position.y, 0.0);
+    EXPECT_LE(ship.transform->position.x + ship.radius, half_width + 1e-9);
+}
+
+TEST(ShipAsteroidCollisionTest, GrowTooBigForWorld_NoGrowth) {
+    constexpr math::Scalar half_width  = 10.0;
+    constexpr math::Scalar half_height = 10.0;
+
+    auto ship = MakeShip(700.0);
+    ship.radius = 10.0;
+    ship.transform->position = {0.0, 0.0};
+
+    auto asteroid = MakeAsteroid(210.0);   // ratio 0.3 — съедобно
+    asteroid.asteroid->score_reward = 5;
+
+    const auto can_grow = [half_width, half_height]
+                          (math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+        const auto min_x = -half_width  + radius;
+        const auto max_x =  half_width  - radius;
+        const auto min_y = -half_height + radius;
+        const auto max_y =  half_height - radius;
+        if (min_x > max_x || min_y > max_y) return false;
+        position.x = std::clamp(position.x, min_x, max_x);
+        position.y = std::clamp(position.y, min_y, max_y);
+        return true;
+    };
+
+    domain::collision::onCollision(ship, asteroid, can_grow);
+
+    EXPECT_TRUE(asteroid.isDestroyed);          // съеден
+    EXPECT_EQ(ship.ship->score, 5u);            // очки начислены
+    EXPECT_DOUBLE_EQ(ship.mass, 910.0);         // масса прибавлена
+    EXPECT_DOUBLE_EQ(ship.radius, 10.0);        // радиус НЕ вырос
+    EXPECT_DOUBLE_EQ(ship.transform->position.x, 0.0);   // позиция НЕ сдвинулась
+    EXPECT_DOUBLE_EQ(ship.transform->position.y, 0.0);
+}
+
 }  // namespace
