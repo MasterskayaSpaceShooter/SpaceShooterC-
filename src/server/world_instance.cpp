@@ -323,10 +323,10 @@ void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) 
     const auto half_height = world_height_ / 2.0;
     const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
         // 1. Границы, в которых должна оказаться НОВАЯ сфера
-        const auto min_x = -half_width  + radius;
-        const auto max_x =  half_width  - radius;
+        const auto min_x = -half_width + radius;
+        const auto max_x = half_width - radius;
         const auto min_y = -half_height + radius;
-        const auto max_y =  half_height - radius;
+        const auto max_y = half_height - radius;
 
         // 2. Радиус больше половины мира — расти некуда
         if (min_x > max_x || min_y > max_y) {
