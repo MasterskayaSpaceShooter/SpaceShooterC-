@@ -344,7 +344,13 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
 }
 
 void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
-    domain::collision::onCollision(ship, asteroid);
+    const auto half_width = world_width_ / 2.0;
+    const auto half_height = world_height_ / 2.0;
+    const auto can_grow = [half_width, half_height](const math::Vector2D& position, math::Scalar radius) noexcept {
+        return position.x - radius >= -half_width && position.x + radius <= half_width &&
+               position.y - radius >= -half_height && position.y + radius <= half_height;
+    };
+    domain::collision::onCollision(ship, asteroid, can_grow);
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
