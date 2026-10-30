@@ -46,10 +46,10 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
         // if the weight is small we multiplying by 5, if the weight is large we multiplying by 2.5
         entity->transform =
             domain::TransformComponent{rand_positions[i], math::Vector2D{0.0, 0.0}, 0.0};  // default initialize
-        entity->asteroid.emplace();                                              // default initialize
-        entity->health.emplace();                                                // default initialize
-        entity->asteroid->score_reward = static_cast<uint16_t>(free_weight[i]);  // set random weight
-        entity->transform->position = rand_positions[i];                         // set random pos
+        entity->asteroid.emplace();                                                        // default initialize
+        entity->health.emplace();                                                          // default initialize
+        entity->asteroid->score_reward = static_cast<uint16_t>(free_weight[i]);            // set random weight
+        entity->transform->position = rand_positions[i];                                   // set random pos
     }
 }
 
