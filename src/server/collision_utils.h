@@ -3,13 +3,12 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <utility>
+
 #include "entity.h"
 #include "health_utils.h"
 #include "logger.h"
 #include "score_utils.h"
-#include <utility>
-
-
 
 namespace domain::collision {
 
