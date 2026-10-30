@@ -321,9 +321,21 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
 void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
     const auto half_width = world_width_ / 2.0;
     const auto half_height = world_height_ / 2.0;
-    const auto can_grow = [half_width, half_height](const math::Vector2D& position, math::Scalar radius) noexcept {
-        return position.x - radius >= -half_width && position.x + radius <= half_width &&
-               position.y - radius >= -half_height && position.y + radius <= half_height;
+    const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+        // 1. Границы, в которых должна оказаться НОВАЯ сфера
+        const auto min_x = -half_width  + radius;
+        const auto max_x =  half_width  - radius;
+        const auto min_y = -half_height + radius;
+        const auto max_y =  half_height - radius;
+
+        // 2. Радиус больше половины мира — расти некуда
+        if (min_x > max_x || min_y > max_y) {
+            return false;
+        }
+
+        position.x = std::clamp(position.x, min_x, max_x);
+        position.y = std::clamp(position.y, min_y, max_y);
+        return true;
     };
     domain::collision::onCollision(ship, asteroid, can_grow);
 }
