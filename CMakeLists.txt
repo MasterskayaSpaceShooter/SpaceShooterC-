@@ -40,21 +40,7 @@ add_subdirectory(src)
 if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
     if (BUILD_TESTING)
-        include(FetchContent)
-        
-        FetchContent_Declare(
-            googletest
-            GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG        v1.15.0
-        )
-        
-        # Критично: использовать ту же динамическую CRT (/MD), что и проект
-        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-        # gmock нужен для unit_tests_server
-        set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
-        
-        FetchContent_MakeAvailable(googletest)
-        
+        find_package(GTest REQUIRED CONFIG)
         add_subdirectory(tests)
     endif ()
 endif ()

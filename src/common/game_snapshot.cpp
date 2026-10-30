@@ -93,7 +93,7 @@ std::vector<std::uint8_t> GameSnapshot::Serialize() const {
     writer.writeU32(static_cast<std::uint32_t>(leaderboard_.size()));
     for (const auto& entry : leaderboard_) {
         std::array<std::uint8_t, 32> name_buf{};
-        const std::size_t copy_len = std::min(entry.name.size(), name_buf.size() - 1);
+        const std::size_t copy_len = std::min(entry.name.size(), name_buf.size());
         std::copy_n(entry.name.begin(), copy_len, name_buf.begin());
         writer.writeBytes(name_buf);
         writer.writeU32(entry.score);
