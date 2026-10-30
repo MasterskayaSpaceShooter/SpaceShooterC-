@@ -422,6 +422,10 @@ void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
 }
 
 void WorldInstance::onPlayerJoin(const PlayerJoinEvent& event) {
+    if (session_to_ship_.count(event.session_id)) {
+        LOG_WARN("[WorldInstance] Duplicate spawn for session {}, ignoring", event.session_id);
+        return;
+    }
     ActionEvent action;
     action.type = ActionType::PlayerJoin;
     action.session_id = event.session_id;
