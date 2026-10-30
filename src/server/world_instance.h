@@ -22,11 +22,11 @@
 #include "thread_safe_queue.h"
 #include "types.h"
 
-enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
+enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
 struct ActionEvent {
     SessionId session_id{};
-    ActionType type{ActionType::PlayerJoin};
+    ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
     bool is_shooting{false};
@@ -359,7 +359,21 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    // TODO: реализовать остальные обработчики коллизий.
+    /**
+     * @brief Колбек для подписки на событие PlayerJoinEvent
+     * @details Создаёт ActionType::PlayerJoin и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины PlayerJoinEvent
+     * @outputs Выходных значений нет.
+     */
+    void onPlayerJoin(const PlayerJoinEvent& event);
+
+    /**
+     * @brief Разрешает тестовому классу доступ к приватным данным WI
+     * @warning Используется только для тестов.
+     */
+    friend class WorldInstanceTestAccessor;
+
+    // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
     void onCollision(domain::Entity& ship, domain::Entity& asteroid);
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
@@ -380,6 +394,7 @@ private:
     math::Scalar world_width_{world::kDefaultWidth};                        ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
-    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
+    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    boost::signals2::scoped_connection sub_player_join_;              ///< Подписка на PlayerJoinEvent
 };
