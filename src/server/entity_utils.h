@@ -144,22 +144,11 @@ inline void updateMovementAndBounds(EntityContainer& entities,
             t.position += t.velocity * dt;
         }
 
-        // Asteroids wrap once fully outside the world.
+        // Asteroids wrap through the world edge. After the wrap, the center sits
+        // just outside the opposite edge (center at ±(w/2 + r)), so the body
+        // re-enters over the following ticks.
         if (entity.type == types::EntityType::Asteroid) {
-            const math::Scalar r = entity.radius;
-
-            if (t.position.x + r < 0.0) {
-                t.position.x = world_width + r;
-            } else if (t.position.x - r > world_width) {
-                t.position.x = -r;
-            }
-
-            if (t.position.y + r < 0.0) {
-                t.position.y = world_height + r;
-            } else if (t.position.y - r > world_height) {
-                t.position.y = -r;
-            }
-
+            t.position = math::wrapCircleThroughWorldBounds(t.position, entity.radius, world_width, world_height);
             continue;
         }
 
