@@ -376,9 +376,9 @@ private:
      */
     void reapDestroyedShips();
 
-    std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
-    ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
-    domain::EntityPool entities_;                            ///< Пул сущностей мира
+    std::atomic<std::uint64_t> current_tick_{0};  ///< Номер текущего тика
+    ThreadSafeQueue<ActionEvent> action_queue_;   ///< Очередь действий игроков
+    domain::EntityPool entities_;                 ///< Пул сущностей мира
     std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
     std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла

@@ -388,8 +388,11 @@ void WorldInstance::dispatchCollision(domain::Entity& a, domain::Entity& b) {
 }
 
 void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
-    (void)ship1;
-    (void)ship2;
+    domain::collision::onCollisionShipShip(ship1, ship2);
+}
+
+void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
+    domain::collision::onCollision(ship, asteroid);
 }
 
 void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
@@ -400,12 +403,21 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
             }
 
             if (slot->type != types::EntityType::Ship || !slot->ship) {
+                LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
                 return;
             }
 
-            domain::addScore(*slot->ship, ship_destroyed ? 50 : 5);
+            const std::uint32_t score = ship_destroyed ? 50 : 5;
+            domain::addScore(*slot->ship, score);
+
+            LOG_INFO("[Collision] Ship {} received {} points (target destroyed: {})",
+                     owner_id.get(),
+                     score,
+                     ship_destroyed);
             return;
         }
+
+        LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
     });
 }
 
@@ -438,14 +450,6 @@ void WorldInstance::reapDestroyedShips() {
         }
     }
     entities_.recycleDestroyed();
-}
-
-void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
-    domain::collision::onCollisionShipShip(ship1, ship2);
-}
-
-void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
-    domain::collision::onCollision(ship, asteroid);
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
