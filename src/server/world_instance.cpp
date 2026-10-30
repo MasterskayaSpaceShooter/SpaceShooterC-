@@ -251,8 +251,8 @@ std::vector<math::Vector2D> WorldInstance::freePositions(std::size_t count, math
         throw std::invalid_argument("WorldInstance: clearance must be finite and non-negative");
     }
 
-    const auto half_width = world_width_ * 0.5;
-    const auto half_height = world_height_ * 0.5;
+    const auto half_width = world_width_ / 2.0;
+    const auto half_height = world_height_ / 2.0;
     if (clearance > half_width || clearance > half_height) {
         return {};
     }
@@ -319,7 +319,25 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
 }
 
 void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
-    domain::collision::onCollision(ship, asteroid);
+    const auto half_width = world_width_ / 2.0;
+    const auto half_height = world_height_ / 2.0;
+    const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+        // 1. Границы, в которых должна оказаться НОВАЯ сфера
+        const auto min_x = -half_width + radius;
+        const auto max_x = half_width - radius;
+        const auto min_y = -half_height + radius;
+        const auto max_y = half_height - radius;
+
+        // 2. Радиус больше половины мира — расти некуда
+        if (min_x > max_x || min_y > max_y) {
+            return false;
+        }
+
+        position.x = std::clamp(position.x, min_x, max_x);
+        position.y = std::clamp(position.y, min_y, max_y);
+        return true;
+    };
+    domain::collision::onCollision(ship, asteroid, can_grow);
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
