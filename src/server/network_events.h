@@ -84,3 +84,14 @@ struct ClientDisconnectedEvent : public NetworkEvent {
      */
     explicit ClientDisconnectedEvent(SessionId id) : NetworkEvent(id) {}
 };
+
+/**
+ * @brief Событие: Клиент прислал команду SHOOT.
+ * @details Генерируется NetworkResponseRouter::onMessageReceived, когда payload
+ *          NetworkMessageEvent равен "SHOOT". Потребляется onShotReceived,
+ *          который публикует ShotHappenedEvent. Стрелок определяется по session_id.
+ */
+
+struct ShotMessageEvent : public NetworkEvent {
+    explicit ShotMessageEvent(SessionId id) : NetworkEvent(id) {}
+};
