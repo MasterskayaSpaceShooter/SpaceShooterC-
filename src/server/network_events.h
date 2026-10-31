@@ -95,3 +95,11 @@ struct ClientDisconnectedEvent : public NetworkEvent {
 struct ShotMessageEvent : public NetworkEvent {
     explicit ShotMessageEvent(SessionId id) : NetworkEvent(id) {}
 };
+
+/**
+ * @brief Событие: Корабль уничтожен.
+ * @details Генерируется классом WorldInstance при гибели корабля.
+ */
+struct ShipDestroyedEvent : public NetworkEvent {
+    explicit ShipDestroyedEvent(SessionId id) : NetworkEvent(id) {}
+};

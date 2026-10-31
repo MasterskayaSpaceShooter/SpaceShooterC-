@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 
 #include "entity.h"
@@ -156,6 +157,54 @@ inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
             ++ship1.ship->frags;
         }
     }
+}
+
+/**
+ * @brief Resolves a collision between a bullet and a ship.
+ *
+ * The callback receives the bullet owner ID and whether the ship was destroyed.
+ */
+template <typename OnHit>
+inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) {
+    if (bullet.type != types::EntityType::Bullet || ship.type != types::EntityType::Ship) {
+        LOG_WARN("[Collision] Bullet-ship collision ignored: entities {} and {} have incorrect types",
+                 bullet.id.get(),
+                 ship.id.get());
+        return;
+    }
+
+    if (!bullet.isValid() || !ship.isValid()) {
+        LOG_WARN("[Collision] Bullet-ship collision ignored: invalid entities {} and {}",
+                 bullet.id.get(),
+                 ship.id.get());
+        return;
+    }
+
+    if (!bullet.combat || !ship.health || !ship.ship || !ship.isDamageable()) {
+        LOG_WARN("[Collision] Bullet-ship collision ignored: missing required components or ship {} is not damageable",
+                 ship.id.get());
+        return;
+    }
+
+    constexpr std::uint16_t kBulletDamage = 25;
+    const types::EntityId owner_id = bullet.combat->owner_id;
+
+    domain::applyDamage(*ship.health, kBulletDamage);
+
+    bullet.isDestroyed = true;
+
+    const bool ship_destroyed = !domain::isAlive(*ship.health);
+    if (ship_destroyed) {
+        ship.isDestroyed = true;
+        LOG_INFO("[Collision] Bullet destroyed ship {} (owner: {})", ship.id.get(), owner_id.get());
+    } else {
+        LOG_INFO("[Collision] Bullet hit ship {} (owner: {}), damage: {}",
+                 ship.id.get(),
+                 owner_id.get(),
+                 kBulletDamage);
+    }
+
+    on_hit(owner_id, ship_destroyed);
 }
 
 }  // namespace domain::collision
