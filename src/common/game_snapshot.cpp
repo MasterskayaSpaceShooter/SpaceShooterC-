@@ -1,10 +1,14 @@
 #include "game_snapshot.h"
 
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
+#include "config.h"
 #include "entity_snapshot_serder.h"
 
 namespace snapshot {
@@ -78,17 +82,30 @@ std::vector<std::uint8_t> GameSnapshot::Serialize() const {
     if (snapshots_.size() > std::numeric_limits<std::uint32_t>::max()) {
         throw std::length_error("GameSnapshot::Serialize: too many entities");
     }
+    if (leaderboard_.size() > std::numeric_limits<std::uint32_t>::max()) {
+        throw std::length_error("GameSnapshot::Serialize: too many leaderboard entries");
+    }
 
     ByteWriter writer;
     writer.writeU32(tick_number_);
-    writer.writeU32(static_cast<std::uint32_t>(snapshots_.size()));
 
+    // --- Сериализация лидерборда ---
+    writer.writeU32(static_cast<std::uint32_t>(leaderboard_.size()));
+    for (const auto& entry : leaderboard_) {
+        std::array<std::uint8_t, 32> name_buf{};
+        const std::size_t copy_len = std::min(entry.name.size(), name_buf.size());
+        std::copy_n(entry.name.begin(), copy_len, name_buf.begin());
+        writer.writeBytes(name_buf);
+        writer.writeU32(entry.score);
+    }
+
+    // --- Сериализация сущностей ---
+    writer.writeU32(static_cast<std::uint32_t>(snapshots_.size()));
     for (const auto& entity : snapshots_) {
         const auto bytes = snapshot_wire::SerializeEntity(entity);
         if (bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
             throw std::length_error("GameSnapshot::Serialize: entity payload is too large");
         }
-
         writer.writeU32(static_cast<std::uint32_t>(bytes.size()));
         writer.writeBytes(bytes);
     }
@@ -99,8 +116,28 @@ std::vector<std::uint8_t> GameSnapshot::Serialize() const {
 GameSnapshot GameSnapshot::Deserialize(const std::vector<std::uint8_t>& buffer) {
     ByteReader reader{buffer};
     const std::uint32_t tick_number = reader.readU32();
-    const std::uint32_t entity_count = reader.readU32();
 
+    // --- Десериализация лидерборда ---
+    const std::uint32_t leaderboard_count = reader.readU32();
+    constexpr std::size_t kMinLeaderboardEntrySize = 32 + sizeof(std::uint32_t);
+    if (leaderboard_count > world::kMaxLeaderboardSize ||
+        leaderboard_count > reader.remaining() / kMinLeaderboardEntrySize) {
+        throw std::invalid_argument("GameSnapshot::Deserialize: impossible leaderboard count");
+    }
+    std::vector<LeaderboardEntry> leaderboard;
+    leaderboard.reserve(leaderboard_count);
+    for (std::uint32_t i = 0; i < leaderboard_count; ++i) {
+        const auto name_bytes = reader.readBytes(32);
+        std::string_view name_view(reinterpret_cast<const char*>(name_bytes.data()), name_bytes.size());
+        if (auto idx = name_view.find('\0'); idx != std::string_view::npos) {
+            name_view = name_view.substr(0, idx);
+        }
+        const std::uint32_t score = reader.readU32();
+        leaderboard.push_back({std::string(name_view), score});
+    }
+
+    // --- Десериализация сущностей ---
+    const std::uint32_t entity_count = reader.readU32();
     if (entity_count > reader.remaining() / sizeof(std::uint32_t)) {
         throw std::invalid_argument("GameSnapshot::Deserialize: impossible entity count");
     }
@@ -118,7 +155,7 @@ GameSnapshot GameSnapshot::Deserialize(const std::vector<std::uint8_t>& buffer) 
     }
 
     reader.requireEnd();
-    return GameSnapshot{std::move(snapshots), tick_number};
+    return snapshot::GameSnapshot(std::move(snapshots), std::move(leaderboard), tick_number);
 }
 
 }  // namespace snapshot
