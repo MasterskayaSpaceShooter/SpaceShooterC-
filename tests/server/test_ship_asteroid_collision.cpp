@@ -67,7 +67,13 @@ TEST(ShipAsteroidCollisionTest, GrowsShipRadiusWhenMassReachesNextLevel) {
         EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius);
     }
 
-    auto asteroid = MakeAsteroid(31.0);
+    auto asteroid = MakeAsteroid(80.0);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
+
+    EXPECT_TRUE(asteroid.isDestroyed);
+    EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius);
+
+    asteroid = MakeAsteroid(70.0);
     domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_TRUE(asteroid.isDestroyed);
