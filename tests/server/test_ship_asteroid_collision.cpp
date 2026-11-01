@@ -32,7 +32,7 @@ TEST(ShipAsteroidCollisionTest, RepelStubDoesNotChangeVelocities) {
     ship.transform->velocity = {10.0, 0.0};
     asteroid.transform->position = {10.0, 0.0};
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_FALSE(asteroid.isDestroyed);
     EXPECT_EQ(ship.health->current, 80);
@@ -46,7 +46,7 @@ TEST(ShipAsteroidCollisionTest, EatsAsteroidBelowHalfShipMass) {
     auto asteroid = MakeAsteroid(99.0);
     asteroid.asteroid->score_reward = 15;
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.mass, 299.0);
@@ -62,13 +62,13 @@ TEST(ShipAsteroidCollisionTest, GrowsShipRadiusWhenMassReachesNextLevel) {
 
     for (const auto asteroid_mass : {19.0, 28.0, 40.0}) {
         auto asteroid = MakeAsteroid(asteroid_mass);
-        domain::collision::onCollision(ship, asteroid);
+        domain::collision::onCollisionShipAsteroid(ship, asteroid);
         EXPECT_TRUE(asteroid.isDestroyed);
         EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius);
     }
 
     auto asteroid = MakeAsteroid(31.0);
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.radius, domain::Entity::kInitialShipRadius * 2.0);
@@ -100,7 +100,7 @@ TEST(ShipAsteroidCollisionTest, EatingAsteroidAtWorldEdgeDoesNotGrowOutsideBound
                position.y - radius >= -half_height && position.y + radius <= half_height;
     };
 
-    domain::collision::onCollision(ship, asteroid, can_grow);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.mass, 170.0);
@@ -114,7 +114,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageAtHalfShipMassBoundary) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(100.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_FALSE(asteroid.isDestroyed);
     EXPECT_EQ(ship.health->current, 80);
@@ -125,7 +125,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageWhenAsteroidMassEqualsShipMass
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(200.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -135,7 +135,7 @@ TEST(ShipAsteroidCollisionTest, DoesNotApplyDamageWhenAsteroidIsHeavier) {
     auto ship = MakeShip(200.0);
     auto asteroid = MakeAsteroid(201.0);
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -148,7 +148,7 @@ TEST(ShipAsteroidCollisionTest, DamageStubDoesNotDestroyLowHealthEntities) {
     ship.health = domain::HealthComponent{1, 1};
     asteroid.health = domain::HealthComponent{1, 1};
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 1);
     EXPECT_EQ(asteroid.health->current, 1);
@@ -160,7 +160,7 @@ TEST(ShipAsteroidCollisionTest, IgnoresInfiniteMasses) {
     auto ship = MakeShip(std::numeric_limits<math::Scalar>::infinity());
     auto asteroid = MakeAsteroid();
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.health->current, 80);
     EXPECT_EQ(asteroid.health->current, 60);
@@ -172,7 +172,7 @@ TEST(ShipAsteroidCollisionTest, DoesNothingWhenEntitiesAreNotShipAndAsteroid) {
     auto asteroid = MakeAsteroid();
     ship.type = types::EntityType::Asteroid;
 
-    domain::collision::onCollision(ship, asteroid);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
 
     EXPECT_EQ(ship.mass, 200.0);
     EXPECT_EQ(ship.health->current, 80);
@@ -185,7 +185,7 @@ TEST(ShipAsteroidCollisionTest, CoincidentEntitiesLeaveVelocitiesUnchangedWithRe
     auto asteroid = MakeAsteroid(100.0);
     ship.transform->velocity = {10.0, 0.0};
 
-    EXPECT_NO_THROW(domain::collision::onCollision(ship, asteroid));
+    EXPECT_NO_THROW(domain::collision::onCollisionShipAsteroid(ship, asteroid));
 
     EXPECT_EQ(ship.transform->velocity, (math::Vector2D{10.0, 0.0}));
     EXPECT_EQ(asteroid.transform->velocity, (math::Vector2D{}));
@@ -214,7 +214,7 @@ TEST(ShipAsteroidCollisionTest, GrowAtWall_ClampsPosition) {
         return true;
     };
 
-    domain::collision::onCollision(ship, asteroid, can_grow);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_EQ(ship.ship->score, 10u);
@@ -224,15 +224,15 @@ TEST(ShipAsteroidCollisionTest, GrowAtWall_ClampsPosition) {
     EXPECT_LE(ship.transform->position.x + ship.radius, half_width + 1e-9);
 }
 
-TEST(ShipAsteroidCollisionTest, GrowTooBigForWorld_NoGrowth) {
+TEST(ShipAsteroidCollisionTest, GrowTooBigForWorld_KeepPositionAndAllowGrowth) {
     constexpr math::Scalar half_width = 10.0;
     constexpr math::Scalar half_height = 10.0;
 
-    auto ship = MakeShip(700.0);
+    auto ship = MakeShip(3000.0);
     ship.radius = 10.0;
-    ship.transform->position = {0.0, 0.0};
+    ship.transform->position = {4.0, 3.0};
 
-    auto asteroid = MakeAsteroid(210.0);  // ratio 0.3 — съедобно
+    auto asteroid = MakeAsteroid(1400.0);  // ratio < 0.5 — съедобно
     asteroid.asteroid->score_reward = 5;
 
     const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
@@ -240,21 +240,24 @@ TEST(ShipAsteroidCollisionTest, GrowTooBigForWorld_NoGrowth) {
         const auto max_x = half_width - radius;
         const auto min_y = -half_height + radius;
         const auto max_y = half_height - radius;
-        if (min_x > max_x || min_y > max_y)
-            return false;
-        position.x = std::clamp(position.x, min_x, max_x);
-        position.y = std::clamp(position.y, min_y, max_y);
+
+        if (min_x <= max_x) {
+            position.x = std::clamp(position.x, min_x, max_x);
+        }
+        if (min_y <= max_y) {
+            position.y = std::clamp(position.y, min_y, max_y);
+        }
         return true;
     };
 
-    domain::collision::onCollision(ship, asteroid, can_grow);
+    domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
 
-    EXPECT_TRUE(asteroid.isDestroyed);                  // съеден
-    EXPECT_EQ(ship.ship->score, 5u);                    // очки начислены
-    EXPECT_DOUBLE_EQ(ship.mass, 910.0);                 // масса прибавлена
-    EXPECT_DOUBLE_EQ(ship.radius, 10.0);                // радиус НЕ вырос
-    EXPECT_DOUBLE_EQ(ship.transform->position.x, 0.0);  // позиция НЕ сдвинулась
-    EXPECT_DOUBLE_EQ(ship.transform->position.y, 0.0);
+    EXPECT_TRUE(asteroid.isDestroyed);
+    EXPECT_EQ(ship.ship->score, 5u);
+    EXPECT_DOUBLE_EQ(ship.mass, 4400.0);
+    EXPECT_DOUBLE_EQ(ship.radius, 20.0);
+    EXPECT_DOUBLE_EQ(ship.transform->position.x, 4.0);
+    EXPECT_DOUBLE_EQ(ship.transform->position.y, 3.0);
 }
 
 }  // namespace

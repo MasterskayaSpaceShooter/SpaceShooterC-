@@ -339,7 +339,6 @@ private:
 
     // TODO: реализовать остальные обработчики коллизий.
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
-
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
      * @return Вектор пар (ник, очки), отсортированный по убыванию.
@@ -361,8 +360,9 @@ private:
     friend class WorldInstanceTestAccessor;
 
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
-    // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
-    void onCollision(domain::Entity& ship, domain::Entity& asteroid);
+    void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
+    enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
+    [[nodiscard]] GrowStatus tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept;
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
