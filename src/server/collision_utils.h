@@ -26,9 +26,9 @@ inline void repelAsteroid(Entity&, Entity&) {}
  * The ship must be the first argument. Entities without the required
  * components, invalid masses, and destroyed entities are ignored.
  */
-inline void onCollision(Entity& ship, Entity& asteroid, NothrowGrowthPredicate auto can_grow) {
+inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid, NothrowGrowthPredicate auto can_grow) {
     if (ship.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Ship) {
-        onCollision(asteroid, ship, std::move(can_grow));
+        onCollisionShipAsteroid(asteroid, ship, std::move(can_grow));
         return;
     }
 
@@ -162,8 +162,8 @@ inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
     }
 }
 
-inline void onCollision(Entity& ship, Entity& asteroid) {
-    onCollision(ship, asteroid, [](const math::Vector2D&, math::Scalar) noexcept {
+inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid) {
+    onCollisionShipAsteroid(ship, asteroid, [](const math::Vector2D&, math::Scalar) noexcept {
         return true;
     });
 }

@@ -75,7 +75,7 @@ struct Entity {
     std::optional<AsteroidComponent> asteroid;
 
     [[nodiscard]] static constexpr math::Scalar massForRadius(math::Scalar radius) noexcept {
-        return std::numbers::pi_v<math::Scalar> * radius * radius / 2.0;
+        return std::numbers::pi_v<math::Scalar> * radius * radius;
     }
 
     [[nodiscard]] bool addMass(math::Scalar amount) noexcept {

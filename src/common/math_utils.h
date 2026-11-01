@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "logger.h"
@@ -276,6 +277,41 @@ Vector2D clampToWorldBounds(const Vector2D&, T1, T2) = delete;
     // чтобы окружность не соприкасалась с сущностями.
     best.radius = std::max(static_cast<Scalar>(0.0), best.radius - kFreeCircleMargin);
     return best;
+}
+
+// Возвращает true, если круг касается или пересекает обе противоположные
+// границы мира: левую и правую либо верхнюю и нижнюю. Границы — конечные
+// отрезки с центром в начале координат.
+// Логирует ошибку и возвращает false, если положение, радиус или размеры мира некорректны.
+[[nodiscard]] inline bool circleIntersectsOppositeWorldBounds(const Vector2D& position,
+                                                              Scalar radius,
+                                                              Scalar world_width = kWorldWidth,
+                                                              Scalar world_height = kWorldHeight) {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(radius) || radius < 0.0) {
+        LOG_ERROR("Position and radius must be finite, and radius non-negative");
+        return false;
+    }
+    if (!std::isfinite(world_width) || !std::isfinite(world_height) || world_width <= 0.0 || world_height <= 0.0) {
+        LOG_ERROR("World dimensions must be finite and positive");
+        return false;
+    }
+
+    const Scalar half_width = world_width * 0.5;
+    const Scalar half_height = world_height * 0.5;
+    const Scalar nearest_y = std::clamp(position.y, -half_height, half_height);
+    const Scalar nearest_x = std::clamp(position.x, -half_width, half_width);
+    const Scalar radius_squared = radius * radius;
+
+    const Vector2D to_left = position - Vector2D{-half_width, nearest_y};
+    const Vector2D to_right = position - Vector2D{half_width, nearest_y};
+    const Vector2D to_bottom = position - Vector2D{nearest_x, -half_height};
+    const Vector2D to_top = position - Vector2D{nearest_x, half_height};
+
+    const bool intersects_left = to_left.lengthSquared() <= radius_squared;
+    const bool intersects_right = to_right.lengthSquared() <= radius_squared;
+    const bool intersects_bottom = to_bottom.lengthSquared() <= radius_squared;
+    const bool intersects_top = to_top.lengthSquared() <= radius_squared;
+    return (intersects_left && intersects_right) || (intersects_bottom && intersects_top);
 }
 
 namespace collision {
