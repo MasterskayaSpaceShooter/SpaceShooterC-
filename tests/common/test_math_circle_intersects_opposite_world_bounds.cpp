@@ -32,6 +32,8 @@ TEST(CircleIntersectsOppositeWorldBounds, ReturnsFalseForInvalidInputs) {
     constexpr Scalar world_size = 20.0;
     EXPECT_FALSE(circleIntersectsOppositeWorldBounds(Vector2D{}, -1.0, world_size, world_size));
     EXPECT_FALSE(circleIntersectsOppositeWorldBounds(Vector2D{}, 1.0, 0.0, world_size));
-    EXPECT_FALSE(circleIntersectsOppositeWorldBounds(
-        Vector2D{std::numeric_limits<Scalar>::infinity(), 0.0}, 1.0, world_size, world_size));
+    EXPECT_FALSE(circleIntersectsOppositeWorldBounds(Vector2D{std::numeric_limits<Scalar>::infinity(), 0.0},
+                                                     1.0,
+                                                     world_size,
+                                                     world_size));
 }
