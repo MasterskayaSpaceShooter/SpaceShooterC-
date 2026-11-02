@@ -1,5 +1,7 @@
 #include "network_response_router.h"
 
+#include "protocol.h"
+
 std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
     if (!event_bus) {
         LOG_ERROR("[NetworkResponseRouter] NetworkResponseRouter::create: event_bus не может быть nullptr");
@@ -35,6 +37,10 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
     if (msg.starts_with("JOIN ")) {
         std::string player_name(msg.substr(5));
         event_bus_->publish(PlayerJoinEvent{event.session_id, std::move(player_name)});
+
+        const std::string accept = "ACCEPT";
+        std::vector<uint8_t> accept_bytes(accept.begin(), accept.end());
+        event_bus_->publish(SendPacketEvent{event.session_id, std::move(accept_bytes)});
         return;
     }
 
