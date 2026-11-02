@@ -361,25 +361,33 @@ private:
 
     // TODO: реализовать остальные обработчики коллизий.
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
+
+    /**
+     * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
+     * @return Вектор пар (ник, очки), отсортированный по убыванию.
+     */
+    [[nodiscard]] std::vector<snapshot::LeaderboardEntry> buildLeaderboard() const;
+
+    // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     void onCollision(domain::Entity& ship, domain::Entity& asteroid);
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
-    std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
-    ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
-    [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
-    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
-    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
-    boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
-    boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
-    std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
-    mutable std::shared_mutex entities_mutex_;  ///< Защита пула сущностей от внешних читателей
-    mutable std::mutex action_mutex_;         ///< Синхронизация enqueueAction() с остановкой
-    mutable std::mutex last_snapshot_mutex_;  ///< Защита последнего снимка мира
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};  ///< Последний опубликованный снимок
-    math::Scalar world_width_{world::kDefaultWidth};                        ///< Ширина мира
-    math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
-    std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
-    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
-    std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< связь сессии и корябля
+    std::atomic<std::uint64_t> current_tick_{0};
+    ThreadSafeQueue<ActionEvent> action_queue_;
+    [[maybe_unused]] domain::EntityPool entities_;
+    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;
+    std::shared_ptr<events::EventBus> event_bus_;
+    boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;
+    boost::asio::steady_timer tick_timer_;
+    std::chrono::microseconds tick_interval_;
+    mutable std::shared_mutex entities_mutex_;
+    mutable std::mutex action_mutex_;
+    mutable std::mutex last_snapshot_mutex_;
+    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_{nullptr};
+    math::Scalar world_width_{world::kDefaultWidth};
+    math::Scalar world_height_{world::kDefaultHeight};
+    std::atomic<State> state_{State::Stopped};
+    boost::signals2::scoped_connection sub_disconnect_;
+    std::unordered_map<SessionId, types::EntityId> session_to_ship_;
 };
