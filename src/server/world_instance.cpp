@@ -169,10 +169,6 @@ void WorldInstance::shutdownTickLoop() {
 
 void WorldInstance::enqueueAction(ActionEvent action) {
     std::lock_guard lock(action_mutex_);
-    if (state_.load() != State::Running) {
-        LOG_WARN("[WorldInstance] discarded action because the world is stopped");
-        return;
-    }
     action_queue_.push(std::move(action));
 }
 
@@ -351,7 +347,6 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 break;
         }
     }
-    entities_.recycleDestroyed();
 }
 
 void WorldInstance::updatePhysics(math::Scalar) {
@@ -473,6 +468,9 @@ void WorldInstance::broadcastSnapshot(const snapshot::GameSnapshot& snapshot) {
     // обработку берёт на себя SessionRegistry.
     const auto payload = snapshot.Serialize();
     event_bus_->publish(SendPacketEvent{NetworkResponseRouter::kBroadcastSessionId, std::move(payload)});
+
+    // удаляем мёртвых из памяти пула
+    entities_.recycleDestroyed();
 }
 
 void WorldInstance::setupSubscriptions() {
