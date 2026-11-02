@@ -381,5 +381,4 @@ private:
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
     boost::signals2::scoped_connection sub_player_join_;
-    boost::signals2::scoped_connection sub_player_join_;
 };
