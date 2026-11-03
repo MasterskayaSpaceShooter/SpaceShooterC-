@@ -389,6 +389,32 @@ void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity
     }
 }
 
+void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
+    domain::collision::onCollisionBulletShip(proj, ship, [this](types::EntityId owner_id, bool ship_destroyed) {
+        for (auto& slot : entities_.storage()) {
+            if (!slot || slot->isDestroyed || slot->id != owner_id) {
+                continue;
+            }
+
+            if (slot->type != types::EntityType::Ship || !slot->ship) {
+                LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
+                return;
+            }
+
+            const std::uint32_t score = ship_destroyed ? 50 : 5;
+            domain::addScore(*slot->ship, score);
+
+            LOG_INFO("[Collision] Ship {} received {} points (target destroyed: {})",
+                     owner_id.get(),
+                     score,
+                     ship_destroyed);
+            return;
+        }
+
+        LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
+    });
+}
+
 void WorldInstance::maintainAsteroidPopulation() {
     // TODO: поддерживать количество астероидов на карте через asteroid_factory_.
 }
