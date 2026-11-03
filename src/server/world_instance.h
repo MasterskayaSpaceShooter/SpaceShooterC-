@@ -339,6 +339,8 @@ private:
 
     // TODO: реализовать остальные обработчики коллизий.
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
+    void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
+
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
      * @return Вектор пар (ник, очки), отсортированный по убыванию.
