@@ -295,11 +295,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            entity->isDestroyed = true;
-                            break;
-                        }
+                    if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
+                        ship->isDestroyed = true;
                     }
                     session_to_ship_.erase(action.session_id);
                 }
