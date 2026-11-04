@@ -7,8 +7,9 @@ add_executable(unit_tests_server
 	test_entity_health.cpp
 	test_entity_utils.cpp
 	test_score.cpp
-    	test_ship_asteroid_collision.cpp
+    test_ship_asteroid_collision.cpp
 	test_ship_ship_collision.cpp
+	test_ship_physics.cpp
 )
 
 target_link_libraries(unit_tests_server PRIVATE server common GTest::gmock GTest::gtest_main)
