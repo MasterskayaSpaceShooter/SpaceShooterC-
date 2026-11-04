@@ -5,6 +5,7 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "collision_utils.h"
@@ -353,7 +354,7 @@ void WorldInstance::resolveCollisions() {
             continue;
 
         for (std::size_t j = i + 1; j < n; ++j) {
-            if (a_opt->isDestroyed)  // bullet used already
+            if (a_opt->isDestroyed)  // сущность уничтожена в dispatchCollision — дальнейшие пары пропускаем
                 break;
             auto& b_opt = storage[j];
             if (!b_opt || b_opt->isDestroyed || !b_opt->transform)
@@ -405,39 +406,54 @@ void WorldInstance::dispatchCollision(domain::Entity& a, domain::Entity& b) {
         onCollisionBulletAsteroid(b, a);
 }
 
-void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
-    (void)proj;
-    (void)ship;
-}
-
 void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
+    // TODO: определить семантику столкновения пули с астероидом: пуля разрушается об астероид
+    // (proj.isDestroyed = true), астероид получает урон или делится на осколки. Пока коллизия
+    // игнорируется — пуля продолжает лететь сквозь астероид.
     (void)proj;
     (void)asteroid;
 }
 
 void WorldInstance::reapDestroyedShips() {
+    // Один проход по пулу: собираем id всех сущностей, помеченных isDestroyed.
+    std::unordered_set<types::EntityId, types::EntityHash> destroyed_ids;
+    for (const auto& opt : entities_.storage()) {
+        if (opt && opt->isDestroyed) {
+            destroyed_ids.insert(opt->id);
+        }
+    }
+
     // Publish one ShipDestroyedEvent per session whose ship died this tick,
     // then drop the mapping, then recycle the pool.
     // PlayerQuit path already removed its mapping in processInputQueue(),
     // so those ships are not revisited here (idempotent).
     for (auto it = session_to_ship_.begin(); it != session_to_ship_.end();) {
-        const types::EntityId eid = it->second;
-        bool destroyed = false;
-        for (const auto& opt : entities_.storage()) {
-            if (opt && opt->id == eid) {
-                destroyed = opt->isDestroyed;
-                break;
-            }
-        }
-        if (destroyed) {
-            const SessionId sid = it->first;
-            LOG_INFO("[WorldInstance] ship destroyed: session={}, entity={}", sid, eid.get());
-            event_bus_->publish(ShipDestroyedEvent{sid});
+        if (destroyed_ids.contains(it->second)) {
+            LOG_INFO("[WorldInstance] ship destroyed: session={}, entity={}", it->first, it->second.get());
+            event_bus_->publish(ShipDestroyedEvent{it->first});
             it = session_to_ship_.erase(it);
         } else {
             ++it;
         }
     }
+
+    // Инцидент: уничтоженный корабль без привязки к сессии — событие не публикуем, только лог.
+    for (const auto& opt : entities_.storage()) {
+        if (!opt || !opt->isDestroyed || opt->type != types::EntityType::Ship)
+            continue;
+
+        bool has_session = false;
+        for (const auto& [sid, eid] : session_to_ship_) {
+            if (eid == opt->id) {
+                has_session = true;
+                break;
+            }
+        }
+        if (!has_session) {
+            LOG_WARN("[WorldInstance] ship {} destroyed without session binding", opt->id.get());
+        }
+    }
+
     entities_.recycleDestroyed();
 }
 

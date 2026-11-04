@@ -375,7 +375,6 @@ private:
     friend class TwoShipsShootTestAccessor;
 
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
-    void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
     void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
 
     void reapDestroyedShips();
