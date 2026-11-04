@@ -14,6 +14,7 @@
 
 #include "asteroid_factory.h"
 #include "config.h"
+#include "entity.h"
 #include "entity_pool.h"
 #include "event_bus.h"
 #include "game_snapshot.h"
@@ -381,6 +382,9 @@ private:
 
     enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
     [[nodiscard]] GrowStatus tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept;
+    void checkForIntersections(domain::Entity& ship,
+                               const domain::Entity& consumed_asteroid,
+                               math::Scalar candidate_radius);
 
     /**
      * @brief Колбек для подписки на событие ShotMessageEvent

@@ -477,8 +477,12 @@ WorldInstance::GrowStatus WorldInstance::tryGrowShip(math::Vector2D& position, m
 
 void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
     auto grow_status = GrowStatus::CanGrow;
-    const auto can_grow = [this, &grow_status](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+    const auto can_grow = [this, &ship, &asteroid, &grow_status](math::Vector2D& position,
+                                                                 math::Scalar radius) noexcept -> bool {
         grow_status = tryGrowShip(position, radius);
+        if (grow_status == GrowStatus::CanGrow) {
+            checkForIntersections(ship, asteroid, radius);
+        }
         return grow_status == GrowStatus::CanGrow;
     };
     domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
@@ -513,6 +517,49 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
 
         LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
     });
+}
+
+void WorldInstance::checkForIntersections(domain::Entity& ship,
+                                          const domain::Entity& consumed_asteroid,
+                                          math::Scalar candidate_radius) {
+    if (!ship.transform || !ship.isValid() || !ship.isDamageable() || !std::isfinite(candidate_radius) ||
+        candidate_radius < 0.0) {
+        return;
+    }
+
+    const auto& ship_position = ship.transform->position;
+    for (auto& slot : entities_.storage()) {
+        if (!entities_.isActive(slot) || !slot->transform || !std::isfinite(slot->radius) || slot->radius < 0.0 ||
+            !std::isfinite(slot->transform->position.x) || !std::isfinite(slot->transform->position.y)) {
+            continue;
+        }
+
+        auto& other = *slot;
+        if (other.id == ship.id || other.id == consumed_asteroid.id) {
+            continue;
+        }
+
+        const auto delta = ship_position - other.transform->position;
+        const auto radius_sum = candidate_radius + other.radius;
+        if (delta.lengthSquared() > radius_sum * radius_sum) {
+            continue;
+        }
+
+        if (other.type == types::EntityType::Ship && other.isDamageable()) {
+            onCollisionShipShip(ship, other);
+        } else if (other.type == types::EntityType::Bullet && other.combat && other.combat->owner_id != ship.id &&
+                   ship.isDamageable()) {
+            domain::applyDamage(*ship.health, other.combat->damage);
+            other.isDestroyed = true;
+            if (!domain::isAlive(*ship.health)) {
+                ship.isDestroyed = true;
+            }
+        }
+
+        if (!ship.isDamageable()) {
+            break;
+        }
+    }
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
