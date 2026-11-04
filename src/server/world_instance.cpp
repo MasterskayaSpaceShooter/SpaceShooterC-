@@ -406,6 +406,38 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
     });
 }
 
+void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
+    domain::collision::onCollisionBulletAsteroid(
+        proj,
+        asteroid,
+        [this](types::EntityId owner_id, bool asteroid_destroyed) {
+            if (!asteroid_destroyed) {
+                return;
+            }
+
+            for (auto& slot : entities_.storage()) {
+                if (!slot || slot->isDestroyed || slot->id != owner_id) {
+                    continue;
+                }
+
+                if (slot->type != types::EntityType::Ship || !slot->ship) {
+                    LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
+                    return;
+                }
+
+                constexpr std::uint32_t kAsteroidDestroyReward = 25;
+                domain::addScore(*slot->ship, kAsteroidDestroyReward);
+
+                LOG_INFO("[Collision] Ship {} received {} points for destroying an asteroid",
+                         owner_id.get(),
+                         kAsteroidDestroyReward);
+                return;
+            }
+
+            LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
+        });
+}
+
 void WorldInstance::maintainAsteroidPopulation() {
     asteroid_factory_.update(freePosition());
 }

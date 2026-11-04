@@ -338,9 +338,9 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    // TODO: реализовать остальные обработчики коллизий.
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
+    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
 
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
