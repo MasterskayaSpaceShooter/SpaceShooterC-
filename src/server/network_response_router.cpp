@@ -1,5 +1,7 @@
 #include "network_response_router.h"
 
+#include "protocol.h"
+
 std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
     if (!event_bus) {
         LOG_ERROR("[NetworkResponseRouter] NetworkResponseRouter::create: event_bus не может быть nullptr");
@@ -25,6 +27,23 @@ void NetworkResponseRouter::setMessageHandler(MessageHandler handler) {
 }
 
 void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) {
+    const std::string_view msg(reinterpret_cast<const char*>(event.payload.data()), event.payload.size());
+
+    if (msg == "SHOOT") {
+        event_bus_->publish(ShotMessageEvent{event.session_id});
+        return;
+    }
+
+    if (msg.starts_with("JOIN ")) {
+        std::string player_name(msg.substr(5));
+        event_bus_->publish(PlayerJoinEvent{event.session_id, std::move(player_name)});
+
+        const std::string accept = "ACCEPT";
+        std::vector<uint8_t> accept_bytes(accept.begin(), accept.end());
+        event_bus_->publish(SendPacketEvent{event.session_id, std::move(accept_bytes)});
+        return;
+    }
+
     MessageHandler handler;
     {
         std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);

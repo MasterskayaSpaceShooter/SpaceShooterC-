@@ -1,11 +1,7 @@
 #pragma once
 
-#include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
-#include <string_view>
 
 #include "math_utils.h"
 #include "types.h"

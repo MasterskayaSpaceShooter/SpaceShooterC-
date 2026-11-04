@@ -21,7 +21,11 @@ namespace domain {
  *            recycleDestroyed() runs.
  * @note Entity must value-initialize to isDestroyed == false; acquire()
  *       relies on this via std::optional::emplace().
- * @note Thread-unsafe. Call from the simulation thread only.
+ * @note Thread-unsafe. Call from the simulation thread only. Const-методы
+ *       (storage(), isActive(), activeCount()) тоже не потокобезопасны: они
+ *       читают storage_/free_indices_ без блокировок, и их вызов небезопасен
+ *       при конкурентной мутации пула из другого потока. В проекте всю работу
+ *       с пулом сериализует tick_strand_ WorldInstance.
  */
 class EntityPool {
 public:
@@ -71,6 +75,38 @@ public:
     /// Callers must skip empty slots and slots whose entity is flagged isDestroyed.
     std::deque<std::optional<Entity>>& storage() {
         return storage_;
+    }
+
+    /// Const access to storage for iteration.
+    /// Callers must skip empty slots and slots whose entity is flagged isDestroyed.
+    /// @note Const не означает потокобезопасность: см. классовый @note.
+    const std::deque<std::optional<Entity>>& storage() const {
+        return storage_;
+    }
+
+    /**
+     * @brief Активен ли слот пула: занят сущностью, не помеченной на удаление.
+     * @details Сущность с типом EntityType::None считается неинициализированной
+     *          и неактивной.
+     * @param slot Входные данные: Слот хранилища пула.
+     * @return true Если slot.has_value() && slot->type != EntityType::None && !slot->isDestroyed.
+     * @note Не потокобезопасен: читает слот без блокировок, см. классовый @note.
+     */
+    [[nodiscard]] bool isActive(const std::optional<Entity>& slot) const noexcept {
+        return slot.has_value() && slot->type != types::EntityType::None && !slot->isDestroyed;
+    }
+
+    /**
+     * @brief Количество занятых слотов пула (верхняя граница числа активных сущностей).
+     * @details O(1): storage_.size() — high-water mark пула, free_indices_.size() —
+     *          число освобождённых слотов. После recycleDestroyed() значение совпадает
+     *          с числом активных сущностей; между пометкой isDestroyed и рециклингом
+     *          оно может быть чуть больше.
+     * @note Не потокобезопасен: читает storage_/free_indices_ без блокировок,
+     *       см. классовый @note.
+     */
+    [[nodiscard]] std::size_t activeCount() const noexcept {
+        return storage_.size() - free_indices_.size();
     }
 
 private:

@@ -1,10 +1,32 @@
 #include "world_instance.h"
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
+#include "collision_utils.h"
+#include "entity_utils.h"
 #include "logger.h"
+#include "network_response_router.h"
+
+namespace {
+
+/// Живые сущности: слот занят, не isDestroyed, есть transform и положительный радиус.
+inline std::vector<const domain::Entity*> collectLiveEntities(const domain::EntityPool& pool) {
+    std::vector<const domain::Entity*> result;
+    for (const auto& slot : pool.storage()) {
+        if (!pool.isActive(slot) || !slot->transform.has_value() || slot->radius <= 0.0) {
+            continue;
+        }
+        result.push_back(&*slot);
+    }
+    return result;
+}
+
+}  // namespace
 
 std::shared_ptr<WorldInstance> WorldInstance::create(boost::asio::io_context& io_context,
                                                      std::shared_ptr<events::EventBus> event_bus,
@@ -66,6 +88,20 @@ void WorldInstance::start() {
 }
 
 void WorldInstance::stop() {
+    // Немедленно и детерминированно останавливаем каденцию тиков в вызывающем
+    // потоке: это не даёт scheduleNextTick() перезавести таймер до того, как
+    // doStop() доберётся до отмены. Если полагаться только на post(doStop),
+    // возможна гонка: doTick() успевает перезавести async_wait (state ещё Running),
+    // и io_context.run()/wait() никогда не завершается (зависание).
+    state_.store(State::Stopped, std::memory_order_relaxed);
+    boost::system::error_code cancel_error;
+    tick_timer_.cancel(cancel_error);
+    if (cancel_error) {
+        LOG_ERROR("[WorldInstance] stop: timer cancel failed: {}", cancel_error.message());
+    }
+
+    // Очистку очереди и session bookkeeping выполняем на strand (как и раньше),
+    // но остановка каденции выше уже состоялась и от неё не зависит.
     boost::asio::post(tick_strand_, [self = shared_from_this()] {
         self->doStop();
     });
@@ -98,11 +134,9 @@ void WorldInstance::doStart() {
 
 void WorldInstance::doStop() {
     try {
-        State expected{State::Running};
-        if (!state_.compare_exchange_strong(expected, State::Stopped)) {
-            return;
-        }
-
+        // state_ уже переведён в Stopped в stop() (синхронно). Здесь выполняем
+        // только очистку, которая должна идти на strand: shutdownTickLoop()
+        // отменяет таймер и дренирует очередь.
         LOG_INFO("[WorldInstance] stop");
         shutdownTickLoop();
     } catch (const std::exception& e) {
@@ -126,6 +160,7 @@ void WorldInstance::shutdownTickLoop() {
     // оставлять их бессмысленно (устарели) и опасно (при перезапуске «оживут» и
     // применятся к новому состоянию игры). Молча терять их не стоит — логируем
     // количество, чтобы заметить, если клиенты продолжают спамить действиями.
+    std::lock_guard action_lock(action_mutex_);
     const auto discarded = action_queue_.drain();
     if (!discarded.empty()) {
         LOG_WARN("[WorldInstance] stop: discarded {} queued actions", discarded.size());
@@ -133,6 +168,7 @@ void WorldInstance::shutdownTickLoop() {
 }
 
 void WorldInstance::enqueueAction(ActionEvent action) {
+    std::lock_guard lock(action_mutex_);
     action_queue_.push(std::move(action));
 }
 
@@ -171,16 +207,22 @@ void WorldInstance::doTick(const boost::system::error_code& error) {
 
 void WorldInstance::runTickStep() {
     try {
-        processInputQueue();
+        // Новые игроки текущего тика: корабли создаются в spawnShips() после
+        // расчёта физики, приветственный снимок им уходит в конце тика.
+        std::vector<PendingJoin> new_players;
+        processInputQueue(new_players);
         updatePhysics(static_cast<float>(tick_interval_.count()) / 1'000'000.0f);
         resolveCollisions();
         maintainAsteroidPopulation();
+        // Спавн после физики: корабли новичков не участвуют в расчётах текущего тика.
+        spawnShips(new_players);
 
-        {
-            std::lock_guard lock(last_snapshot_mutex_);
-            last_snapshot_ = std::make_shared<snapshot::GameSnapshot>(buildGameSnapshot());
-        }
-        broadcastSnapshot();
+        auto snapshot = buildGameSnapshot();
+        // Приветственный снимок текущего тика (с кораблями новичков) доставляет
+        // новому игроку broadcast: сессии регистрируются в SessionRegistry при
+        // подключении (tcp_server.cpp), поэтому персональная рассылка по
+        // new_players не требуется и лишь дублировала бы тот же payload.
+        broadcastSnapshot(snapshot);
     } catch (const std::exception& e) {
         LOG_ERROR("[WorldInstance] tick #{} error: {}", current_tick_.load(), e.what());
     } catch (...) {
@@ -216,16 +258,98 @@ std::uint64_t WorldInstance::currentTick() const noexcept {
     return current_tick_.load();
 }
 
-std::shared_ptr<const snapshot::GameSnapshot> WorldInstance::lastSnapshot() const noexcept {
-    std::lock_guard lock(last_snapshot_mutex_);
-    return last_snapshot_;
+math::Circle WorldInstance::freePosition() const {
+    const auto entities = collectLiveEntities(entities_);
+
+    std::vector<std::pair<math::Vector2D, math::Scalar>> occupied;
+    occupied.reserve(entities.size());
+    for (const auto* e : entities) {
+        occupied.emplace_back(e->transform->position, e->radius);
+    }
+
+    return math::largestEmptyCircle(occupied, world_width_, world_height_);
 }
 
-void WorldInstance::processInputQueue() {
-    // TODO: извлечь действия игроков из action_queue_ и применить их к миру.
+void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
+    const auto queued_actions = action_queue_.drain();
+    for (const auto& action : queued_actions) {
+        switch (action.type) {
+            case ActionType::PlayerJoin: {
+                auto it = std::find_if(new_players.begin(), new_players.end(), [&action](const PendingJoin& p) {
+                    return p.session_id == action.session_id;
+                });
+
+                if (it != new_players.end()) {
+                    // пропускаем игрока, если тот уже есть в new_players
+                    LOG_WARN("[WorldInstance] Duplicate PlayerJoin for session {}, ignoring", action.session_id);
+                    break;
+                }
+                new_players.push_back(PendingJoin{action.session_id, action.player_name});
+                break;
+            }
+            case ActionType::PlayerQuit: {
+                /* Достаём EntityId мапы session_to_ship_ по action.session_id, находим в EntityPool нужный корабль и
+                 * помечаем удалённым, выходим из цикла и удаляем связь из мапы session_to_ship_, в конце вызываем
+                 * entities_.recycleDestroyed(), он сам удалит помеченные мертвыми корабли из памяти */
+                auto it = session_to_ship_.find(action.session_id);
+                if (it != session_to_ship_.end()) {
+                    auto ship_id = it->second;
+                    for (auto& entity : entities_.storage()) {
+                        if (entity.has_value() && entity->id == ship_id) {
+                            entity->isDestroyed = true;
+                            break;
+                        }
+                    }
+                    session_to_ship_.erase(action.session_id);
+                }
+                break;
+            }
+            case ActionType::MoveAndShoot: {
+                /* Достаём EntityId из мапы session_to_ship_ по action.session_id. Если игрок стреляет, то берём данные
+                 * корабля из EntityPool, создаём пулю и задаём ей параметры направления. */
+                auto it = session_to_ship_.find(action.session_id);
+                if (it != session_to_ship_.end()) {
+                    auto ship_id = it->second;
+                    domain::Entity* ship = nullptr;
+
+                    for (auto& entity : entities_.storage()) {
+                        if (entity.has_value() && entity->id == ship_id) {
+                            if (entity->transform.has_value()) {
+                                if (action.move_direction.lengthSquared() > 0) {
+                                    entity->transform->velocity = action.move_direction;
+                                }
+                                ship = &(*entity);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (ship && action.is_shooting) {
+                        auto bullet = entities_.acquire();
+                        bullet->type = types::EntityType::Bullet;
+                        bullet->radius = world::kBulletRadius;
+                        bullet->transform = domain::TransformComponent{};
+                        bullet->combat = domain::CombatComponent{};
+
+                        auto angle = ship->transform->angle;
+                        math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                        bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                        bullet->transform->velocity = direction * world::kBulletSpeed;
+
+                        bullet->combat->owner_id = ship_id;
+                        bullet->combat->damage = world::kBulletDamage;
+                    }
+                }
+                break;
+            }
+            case ActionType::Respawn:
+            default:
+                break;
+        }
+    }
 }
 
-void WorldInstance::updatePhysics(float) {
+void WorldInstance::updatePhysics(math::Scalar) {
     // TODO: обновить позиции кораблей, снарядов и астероидов за интервал тика (dt).
 }
 
@@ -233,17 +357,120 @@ void WorldInstance::resolveCollisions() {
     // TODO: найти пересечения сущностей и вызвать соответствующие onCollision().
 }
 
+void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
+    domain::collision::onCollisionShipShip(ship1, ship2);
+}
+
+void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
+    domain::collision::onCollision(ship, asteroid);
+}
+
 void WorldInstance::maintainAsteroidPopulation() {
     // TODO: поддерживать количество астероидов на карте через asteroid_factory_.
 }
 
-snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
-    // TODO: собрать снимок состояния мира для рассылки клиентам.
-    return snapshot::GameSnapshot{};
+void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
+    if (new_players.empty()) {
+        return;
+    }
+
+    // СПАВН В СВОБОДНОЙ ОБЛАСТИ:
+    // Каждый корабль размещается в центре наибольшей свободной окружности поля
+    // (freePosition()), не пересекаясь и не касаясь живых сущностей.
+    //
+    // Порядок критичен при спавне нескольких сущностей за тик:
+    // freePosition() читает entities_ и считает «занятой» любую сущность с заполненным
+    // transform и радиусом > 0. Поэтому freePosition() вызывается перед КАЖДЫМ acquire(),
+    // а transform/radius нового корабля заполняются сразу после acquire() — так следующий
+    // новичок получит заново пересчитанную «самую разряженную» область, а не ту же точку.
+    for (const auto& join : new_players) {
+        const math::Circle area = freePosition();  // <— до acquire()
+        if (area.radius < world::kShipDefaultRadius) {
+            LOG_WARN("[WorldInstance] spawn: crowded world, free radius {:.3f} < ship radius {:.3f}",
+                     area.radius,
+                     world::kShipDefaultRadius);
+        }
+
+        auto* entity = entities_.acquire();
+        entity->type = types::EntityType::Ship;
+        entity->mass = world::kShipDefaultMass;
+        entity->radius = world::kShipDefaultRadius;
+        // transform/radius заполняются сразу, чтобы freePosition() на следующей
+        // итерации учитывал этот корабль как занятый.
+        entity->transform = domain::TransformComponent{area.center, {0.0, 0.0}, 0.0};
+
+        domain::ShipComponent ship;
+        ship.name.fill('\0');
+        const std::size_t len = std::min(join.player_name.size(), ship.name.size() - 1);
+        std::copy_n(join.player_name.data(), len, ship.name.begin());
+        ship.thrust_power = world::kShipDefaultThrustPower;
+        ship.drag = world::kShipDefaultDrag;
+        entity->ship = ship;
+
+        entity->health = domain::HealthComponent{world::kShipDefaultHealth, world::kShipDefaultHealth};
+        entity->combat = domain::CombatComponent{world::kShipDefaultDamage, entity->id};
+
+        // Привязываем сессию к кораблю: по ней ищется корабль при обработке
+        // команд игрока и удалении при PlayerQuit.
+        session_to_ship_[join.session_id] = entity->id;
+    }
 }
 
-void WorldInstance::broadcastSnapshot() {
-    // TODO: разослать buildGameSnapshot() всем клиентам через event_bus_.
+std::vector<snapshot::LeaderboardEntry> WorldInstance::buildLeaderboard() const {
+    std::vector<snapshot::LeaderboardEntry> top_players;
+
+    for (const auto& slot : entities_.storage()) {
+        // Пропускаем пустые слоты
+        if (!slot.has_value())
+            continue;
+        const auto& entity = slot.value();
+
+        // Учитываем только живых игроков (тип Ship + есть компонент + health > 0)
+        if (entity.type == types::EntityType::Ship && entity.ship.has_value() && entity.health.has_value() &&
+            entity.health->current > 0 && !entity.isDestroyed) {
+            // Конвертируем char[32] в std::string
+            std::string_view view(entity.ship->name.data(), entity.ship->name.size());
+            if (auto idx = view.find('\0'); idx != std::string_view::npos) {
+                view = view.substr(0, idx);
+            }
+            top_players.push_back({std::string(view), entity.ship->score});
+        }
+    }
+
+    const size_t top_count = std::min(world::kMaxLeaderboardSize, top_players.size());
+
+    std::partial_sort(top_players.begin(),
+                      top_players.begin() + top_count,
+                      top_players.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.score > b.score;
+                      });
+
+    top_players.resize(top_count);
+    return top_players;
+}
+
+snapshot::GameSnapshot WorldInstance::buildGameSnapshot() {
+    // Собираем снимки сущностей (логика из main)
+    domain::buildEntitySnapshots(entities_, snapshot_buffer_);
+
+    // Собираем таблицу лидеров
+    auto leaderboard = buildLeaderboard();
+
+    // Возвращаем GameSnapshot с тремя аргументами
+    const auto tick_number = static_cast<std::uint32_t>(current_tick_.load());
+    return snapshot::GameSnapshot{snapshot_buffer_, std::move(leaderboard), tick_number};
+}
+
+void WorldInstance::broadcastSnapshot(const snapshot::GameSnapshot& snapshot) {
+    // Сериализуем готовый снимок мира и публикуем в шину событий.
+    // session_id == 0 (kBroadcastSessionId) — маркер массовой рассылки всем клиентам,
+    // обработку берёт на себя SessionRegistry.
+    const auto payload = snapshot.Serialize();
+    event_bus_->publish(SendPacketEvent{NetworkResponseRouter::kBroadcastSessionId, std::move(payload)});
+
+    // удаляем мёртвых из памяти пула
+    entities_.recycleDestroyed();
 }
 
 void WorldInstance::setupSubscriptions() {
@@ -257,6 +484,13 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
+    // подписка на вхождение клиента в игру
+    sub_player_join_ = event_bus_->subscribe<PlayerJoinEvent>([weak_self](const PlayerJoinEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onPlayerJoin(event);
+        }
+    });
+
     // далее другие подписки
 }
 
@@ -266,4 +500,13 @@ void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
     action.session_id = event.session_id;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] PlayerQuit for session {}", event.session_id);
+}
+
+void WorldInstance::onPlayerJoin(const PlayerJoinEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::PlayerJoin;
+    action.session_id = event.session_id;
+    action.player_name = event.login;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] PlayerJoin: {} join to game from session {}", event.login, event.session_id);
 }

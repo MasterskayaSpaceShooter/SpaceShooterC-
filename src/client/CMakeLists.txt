@@ -12,6 +12,8 @@ add_library(client STATIC
         game_controller.cpp
         score_view.h
         score_view.cpp
+        leaderboard_view.h
+        leaderboard_view.cpp
 )
 
 # Публично отдаём include-пути, чтобы все, кто линкуется к client, видели заголовки

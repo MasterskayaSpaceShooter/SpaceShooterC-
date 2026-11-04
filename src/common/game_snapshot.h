@@ -1,15 +1,23 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "entity_snapshot.h"
 
 namespace snapshot {
+struct LeaderboardEntry {
+    std::string name;
+    std::uint32_t score;
+};
+
 class GameSnapshot {
 public:
-    GameSnapshot(std::vector<EntitySnapshot> snapshots, std::uint32_t tick_number) :
-        snapshots_(std::move(snapshots)), tick_number_(tick_number) {}
+    GameSnapshot(std::vector<EntitySnapshot> snapshots,
+                 std::vector<LeaderboardEntry> leaderboard,
+                 std::uint32_t tick_number) :
+        snapshots_(std::move(snapshots)), leaderboard_(std::move(leaderboard)), tick_number_(tick_number) {}
     GameSnapshot() = default;
 
     GameSnapshot(const GameSnapshot&) = delete;
@@ -21,6 +29,10 @@ public:
     // Возвращает вектор снимков сущностей, которые были зафиксированы на момент тика tick_number_.
     [[nodiscard]] const std::vector<EntitySnapshot>& getSnapshots() const noexcept {
         return snapshots_;
+    }
+
+    [[nodiscard]] const std::vector<LeaderboardEntry>& getLeaderboard() const noexcept {
+        return leaderboard_;
     }
 
     // Возвращает номер тика, на момент которого был зафиксирован снимок.
@@ -36,6 +48,7 @@ public:
 
 private:
     std::vector<EntitySnapshot> snapshots_;
+    std::vector<LeaderboardEntry> leaderboard_;
     std::uint32_t tick_number_;
 };
 }  // namespace snapshot

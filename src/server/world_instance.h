@@ -2,11 +2,14 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <boost/signals2/connection.hpp>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config.h"
@@ -16,12 +19,13 @@
 #include "math_utils.h"
 #include "network_events.h"
 #include "thread_safe_queue.h"
+#include "types.h"
 
-enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
+enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
 struct ActionEvent {
     SessionId session_id{};
-    ActionType type{ActionType::PlayerJoin};
+    ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
     bool is_shooting{false};
@@ -44,13 +48,11 @@ struct ActionEvent {
  *         на потоке(ах), обслуживающем(их) io_context; состояние мира (entities_)
  *         доступно только внутри doTick(). start()/stop() лишь помещают работу
  *         на strand и возвращаются немедленно.
- *       - enqueueAction(), currentTick(), lastSnapshot() безопасны для вызова
+ *       - enqueueAction(), currentTick() безопасны для вызова
  *         из любых потоков.
- *       - Внешние мутации мира выполняются только через очередь команд и
- *         применяются на ближайшем тике.
  * @note Объект должен жить в std::shared_ptr (см. create()): async-цепочка тиков
  *       удерживает себя через shared_from_this() и гарантирует деинициализацию
- *       только после отмены таймера.
+ *       только после завершения или отмены таймерного обработчика.
  * @note При работе с NetworkContext перед его stop()/wait() обязательно вызвать
  *       stop() — иначе активный steady_timer не даст io_context::run() завершиться.
  */
@@ -69,11 +71,11 @@ public:
      *          удерживает себя через shared_from_this()).
      * @param io_context Входные данные: Контекст ввода-вывода Asio для таймера тиков.
      * @param event_bus Входные данные: Шина событий сервера для публикации снимков состояния. Не должен быть nullptr.
-     * @param tick_rate_hz Входные данные: Частота тиков в Гц (интервал 1000 / tick_rate_hz мс).
+     * @param tick_rate_hz Входные данные: Частота тиков в Гц (положительное значение).
      * @param world_width Входные данные: Ширина мира, по умолчанию 2000.0.
      * @param world_height Входные данные: Высота мира, по умолчанию 2000.0.
-     * @throws std::invalid_argument Если event_bus равен nullptr, либо tick_rate_hz, world_width или world_height
-     * меньше либо равны 0.
+     * @throws std::invalid_argument Если event_bus равен nullptr, либо tick_rate_hz,
+     * world_width или world_height меньше либо равны 0.
      * @return std::shared_ptr<WorldInstance> Указатель на созданный игровой мир.
      * @note io_context должен пережить WorldInstance (outlive): таймер и strand
      *       используют его ресурсы, и обращение к ним после уничтожения
@@ -93,12 +95,12 @@ public:
      *          std::make_shared, сохраняя контроль фабрики create().
      * @param io_context Входные данные: Контекст ввода-вывода Asio для таймера тиков.
      * @param event_bus Входные данные: Шина событий сервера для публикации снимков состояния. Не должен быть nullptr.
-     * @param tick_rate_hz Входные данные: Частота тиков в Гц (интервал 1000 / tick_rate_hz мс).
+     * @param tick_rate_hz Входные данные: Частота тиков в Гц (положительное значение).
      * @param world_width Входные данные: Ширина мира, по умолчанию 2000.0.
      * @param world_height Входные данные: Высота мира, по умолчанию 2000.0.
      * @param Входные данные: Приватный маркер доступа (паттерн Badge).
-     * @throws std::invalid_argument Если event_bus равен nullptr, либо tick_rate_hz, world_width или world_height
-     * меньше либо равны 0.
+     * @throws std::invalid_argument Если event_bus равен nullptr, либо tick_rate_hz,
+     * world_width или world_height меньше либо равны 0.
      * @note io_context должен пережить WorldInstance (outlive): таймер и strand
      *       используют его ресурсы, и обращение к ним после уничтожения
      *       io_context — неопределённое поведение.
@@ -156,27 +158,16 @@ public:
     [[nodiscard]] std::uint64_t currentTick() const noexcept;
 
     /**
-     * @brief Возвращает последний опубликованный снимок состояния мира.
-     * @details Потокобезопасен: возвращает копию снимка под last_snapshot_mutex_.
-     * @return std::shared_ptr<const snapshot::GameSnapshot> Снимок состояния или nullptr,
-     *         если тики ещё не запускались.
+     * @brief Возвращает наибольшую свободную окружность игрового поля.
+     * @details Свободная окружность — окружность, целиком лежащая внутри мировых границ
+     *          и не пересекающаяся и не касающаяся ни одной живой сущности (учитываются
+     *          все типы, включая Bullet). Окружность с максимальным радиусом; при равенстве
+     *          радиусов выбирается ближайшая к началу координат.
+     * @return math::Circle Наибольшая свободная окружность. Если живых сущностей нет —
+     *         вписанная в мир окружность с центром в (0,0).
+     * @note Константен: читает entities_ — вызывать только в контексте тика (на tick_strand_).
      */
-    [[nodiscard]] std::shared_ptr<const snapshot::GameSnapshot> lastSnapshot() const noexcept;
-
-    /**
-     * @brief Возвращает до count свободных позиций внутри мировых границ.
-     * @details Свободная позиция — узел регулярной сетки, не пересекающийся ни с одной
-     *          живой сущностью мира (учитываются все типы, включая Bullet).
-     *          Реализация отсутствует: появится вместе с симуляцией мира;
-     *          границы мира берутся из world_width_/world_height_.
-     * @param count Входные данные: Максимальное число позиций (0 -> пустой результат).
-     * @param clearance Входные данные: Радиус «запретной» окружности кандидата, по умолчанию 30.0.
-     * @return std::vector<math::Vector2D> Свободные позиции (не более count).
-     * @note Константен: читает entities_ — вызывать
-     *       только в контексте тика (на tick_strand_).
-     */
-    [[nodiscard]] std::vector<math::Vector2D> freePositions(std::size_t count,
-                                                            math::Scalar clearance = world::kDefaultClearance) const;
+    [[nodiscard]] math::Circle freePosition() const;
 
 private:
     /**
@@ -193,9 +184,8 @@ private:
      *          Прочие ошибки таймера логируются, и игровой цикл останавливается.
      *          Следующий тик планируется до выполнения тела текущего,
      *          чтобы работа тика не сдвигала абсолютную каденцию.
-     *          Исключения из шагов тика перехватываются в runTickStep() и логируются,
-     *          цикл продолжается. Исключения из самого тела (планирование, шаги тика)
-     *          перехватываются здесь, логируются, и цикл переводится в Stopped.
+     *          Исключения любого этапа приводят к остановке цикла; номер тика
+     *          увеличивается только после успешного выполнения всех этапов.
      * @param error Входные данные: Код ошибки Asio по результату ожидания таймера.
      * @outputs Выходных значений нет.
      */
@@ -203,9 +193,20 @@ private:
 
     /**
      * @brief Выполняет тело одного игрового тика: обработка входов, физика,
-     *        коллизии, поддержание популяции астероидов, сбор и рассылка снимка.
-     * @details Исключения любого рода перехватываются и логируются, чтобы
-     *          одиночный сбой не остановил игровой цикл.
+     *        коллизии, поддержание популяции астероидов, спавн кораблей новых
+     *        игроков, сбор и рассылка снимка.
+     * @details Порядок шагов:
+     *          1. processInputQueue() — накопление действий игроков (в т.ч. PlayerJoin).
+     *          2. updatePhysics(), resolveCollisions(), maintainAsteroidPopulation() —
+     *             расчёт мира за тик.
+     *          3. spawnShips() — создание кораблей новых игроков ПОСЛЕ физики,
+     *             поэтому они не участвуют в расчётах текущего тика.
+     *          4. buildGameSnapshot() + broadcastSnapshot().
+     *             Приветственный снимок (с кораблями новичков) доставляет новым
+     *             игрокам broadcast: их сессии уже в SessionRegistry к моменту
+     *             рассылки, поэтому отдельная персональная рассылка не нужна.
+     * @details Исключения передаются в doTick(), чтобы частичный тик не считался
+     *          завершённым.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
@@ -240,8 +241,7 @@ private:
     /**
      * @brief Реализация остановки, исполняется на tick_strand_.
      * @details Переводит состояние Running -> Stopped и отменяет tick_timer_.
-     *          Исключения логируются и проглатываются, чтобы сбой останова
-     *          не вылетел из Asio-хендлера.
+     *          Исключения логируются и проглатываются.
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
@@ -249,26 +249,36 @@ private:
 
     /**
      * @brief Отменяет tick_timer_ и выбрасывает накопленную очередь действий.
-     * @details Исполняется на tick_strand_ уже после перевода state_ в Stopped:
-     *          и при штатной остановке (doStop), и при сбое таймера (doTick).
+     * @details Вызывается после перевода state_ в Stopped: при штатной остановке
+     *          (doStop) и при сбое таймера (doTick).
      * @inputs Входных параметров нет.
      * @outputs Выходных значений нет.
      */
     void shutdownTickLoop();
 
+    // Сессия нового игрока и его имя; корабль создаётся после расчёта физики
+    // мира (см. spawnShips() и runTickStep()).
+    struct PendingJoin {
+        SessionId session_id;
+        std::string player_name;
+    };
+
     /**
      * @brief Обрабатывает накопленные действия игроков.
-     * @inputs Входных параметров нет.
+     * @details Выполняется в начале тика. Корабль нового игрока создаётся не здесь,
+     *          а позже в spawnShips() (после расчёта физики); здесь лишь накапливается
+     *          session_id и имя игрока для последующего спавна (см. runTickStep()).
+     * @param new_players Входные данные: Буфер для новых игроков текущего тика.
      * @outputs Выходных значений нет.
      */
-    void processInputQueue();
+    void processInputQueue(std::vector<PendingJoin>& new_players);
 
     /**
      * @brief Обновляет физику мира (движение кораблей, снарядов, астероидов).
      * @param dt Входные данные: Время, прошедшее с предыдущего тика, в секундах.
      * @outputs Выходных значений нет.
      */
-    void updatePhysics(float dt);
+    void updatePhysics(math::Scalar dt);
 
     /**
      * @brief Рассчитывает коллизии между сущностями мира.
@@ -285,18 +295,31 @@ private:
     void maintainAsteroidPopulation();
 
     /**
+     * @brief Создаёт корабли новых игроков в свободных от объектов областях мира.
+     * @details Вызывается в конце тика ПОСЛЕ расчёта физики и коллизий: корабль
+     *          появляется в центре наибольшей свободной окружности (freePosition())
+     *          и попадает в снимок текущего тика, но в физике этого тика не участвует.
+     * @param new_players Входные данные: Сессии новых игроков текущего тика.
+     * @outputs Выходных значений нет.
+     */
+    void spawnShips(const std::vector<PendingJoin>& new_players);
+
+    /**
      * @brief Собирает снимок текущего состояния мира для рассылки.
+     * @details Заполняет переиспользуемый буфер snapshot_buffer_ снимками живых
+     *          сущностей, чтобы не аллоцировать вектор на каждом тике.
      * @return snapshot::GameSnapshot Снимок состояния мира.
      */
     [[nodiscard]] snapshot::GameSnapshot buildGameSnapshot();
 
     /**
      * @brief Рассылает снимок состояния мира всем клиентам через event_bus_.
-     * @details Заглушка: на данном этапе не реализовано, см. TODO.
-     * @inputs Входных параметров нет.
+     * @details Принимает готовый снимок из runTickStep(), чтобы не собирать
+     *          его повторно внутри рассылки.
+     * @param snapshot Входные данные: Готовый снимок состояния мира.
      * @outputs Выходных значений нет.
      */
-    void broadcastSnapshot();
+    void broadcastSnapshot(const snapshot::GameSnapshot& snapshot);
 
     /**
      * @brief Здесь лежат все подписки
@@ -314,23 +337,48 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
+    // TODO: реализовать остальные обработчики коллизий.
+    void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
+
+    /**
+     * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
+     * @return Вектор пар (ник, очки), отсортированный по убыванию.
+     */
+    [[nodiscard]] std::vector<snapshot::LeaderboardEntry> buildLeaderboard() const;
+
+    /**
+     * @brief Колбек для подписки на событие PlayerJoinEvent
+     * @details Создаёт ActionType::PlayerJoin и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины PlayerJoinEvent
+     * @outputs Выходных значений нет.
+     */
+    void onPlayerJoin(const PlayerJoinEvent& event);
+
+    /**
+     * @brief Разрешает тестовому классу доступ к приватным данным WI
+     * @warning Используется только для тестов.
+     */
+    friend class WorldInstanceTestAccessor;
+
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     // void onCollision(domain::Entity& ship1, domain::Entity& ship2);
-    // void onCollision(domain::Entity& ship, domain::Entity& asteroid);
+    void onCollision(domain::Entity& ship, domain::Entity& asteroid);
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
     std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
     ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
     [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
-    std::shared_ptr<events::EventBus> event_bus_;   ///< Шина событий сервера
+    std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
-    boost::asio::steady_timer tick_timer_;              ///< Таймер игровых тиков
-    std::chrono::microseconds tick_interval_;           ///< Интервал одного тика
+    boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
+    mutable std::mutex action_mutex_;          ///< Синхронизация enqueueAction() с остановкой
     math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
-    std::shared_ptr<const snapshot::GameSnapshot> last_snapshot_;  ///< Последний снимок мира для внешних читателей
-    mutable std::mutex last_snapshot_mutex_;             ///< Защита last_snapshot_
-    boost::signals2::scoped_connection sub_disconnect_;  ///< Подписка на ClientDisconnectedEvent
+    boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
+    boost::signals2::scoped_connection sub_player_join_;
 };

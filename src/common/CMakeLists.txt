@@ -21,6 +21,8 @@ target_sources(common PRIVATE
         entity_snapshot_serder.cpp
         game_snapshot.h
         game_snapshot.cpp
+        protocol.h
+        protocol.cpp
 )
 
 target_link_libraries(common PUBLIC Boost::boost)

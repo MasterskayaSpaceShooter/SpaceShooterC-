@@ -15,4 +15,6 @@ using EntityHash = types::StrongIdIdentityHash<EntityId>;
 
 enum class EntityType : std::uint8_t { None, Ship, Asteroid, Bullet };
 
+enum class Direction { Up, Down, Left, Right };
+
 }  // namespace types

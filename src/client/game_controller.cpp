@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "logger.h"
+#include "protocol.h"
 
 namespace client {
 
@@ -24,10 +25,10 @@ std::shared_ptr<GameController> GameController::create(TcpClientPtr tcp, boost::
 }
 
 void GameController::start(std::string host, std::uint16_t port, std::string playerName) {
+    if (!validatePlayerName(playerName)) {
+        return;
+    }
     LOG_INFO("start() requested: host='{}' port={} player='{}'", host, port, playerName);
-
-    // No state check here — it would race with a concurrent start() or
-    // shutdown(). Post unconditionally; doStart() decides on the strand.
     boost::asio::post(
         strand_,
         [self = shared_from_this(), host = std::move(host), port, playerName = std::move(playerName)]() mutable {
@@ -40,6 +41,22 @@ void GameController::shutdown() {
     boost::asio::post(strand_, [self = shared_from_this()] {
         self->doShutdown();
     });
+}
+
+void GameController::rejoin(std::string host, std::uint16_t port, std::string playerName) {
+    if (!validatePlayerName(playerName)) {
+        return;
+    }
+    LOG_INFO("rejoin() requested: host='{}' port={} player='{}'", host, port, playerName);
+    boost::asio::post(
+        strand_,
+        [self = shared_from_this(), host = std::move(host), port, playerName = std::move(playerName)]() mutable {
+            // doShutdown() is unconditional; it tears down the current
+            // socket (if any) and transitions to Disconnected, so doStart()
+            // is guaranteed to pass its own guard below.
+            self->doShutdown();
+            self->doStart(std::move(host), port, std::move(playerName));
+        });
 }
 
 ClientState GameController::state() const noexcept {
@@ -59,6 +76,15 @@ void GameController::wireCallbacks() {
     tcp_->setDisconnectCallback([weak] {
         if (auto self = weak.lock())
             boost::asio::post(self->strand_, [self] {
+                const auto s = self->state_.load();
+                // Stale event from a superseded connection (e.g. the disconnect
+                // posted by rejoin()'s doShutdown() firing after doStart()
+                // already started a new connect), or a redundant event while
+                // already torn down. Drop.
+                if (s == ClientState::Disconnected || s == ClientState::Connecting) {
+                    LOG_INFO("Ignoring disconnect event (state={})", convertStateToString(s));
+                    return;
+                }
                 LOG_INFO("TcpClient reported disconnect");
                 self->setState(ClientState::Disconnected);
             });
@@ -75,17 +101,21 @@ void GameController::doStart(const std::string& host, std::uint16_t port, std::s
     setState(ClientState::Connecting);
     LOG_INFO("Connecting to {}:{} as '{}'", host, port, playerName_);
 
+    const std::uint64_t gen = ++connectGen_;
     auto weak = weak_from_this();
-    tcp_->connect(host, port, [weak](bool ok) {
+    tcp_->connect(host, port, [weak, gen](bool ok) {
         if (auto self = weak.lock())
-            boost::asio::post(self->strand_, [self, ok] {
-                // If shutdown() ran while the connect was in flight, we are
-                // no longer Connecting. Bail — do not touch tcp_ further.
+            boost::asio::post(self->strand_, [self, ok, gen] {
+                // Generation check first: a callback belonging to a superseded
+                // connect (rejoin / shutdown+start) must be ignored even if
+                // state_ happens to read Connecting again.
+                if (self->connectGen_ != gen) {
+                    LOG_INFO("Ignoring stale connect callback (gen {} vs current {})", gen, self->connectGen_);
+                    return;
+                }
                 if (self->state_.load() != ClientState::Connecting) {
-                    LOG_WARN(
-                        "Connect callback arrived but state={} (expected Connecting) — "
-                        "shutdown() likely raced with connect",
-                        convertStateToString(self->state_.load()));
+                    LOG_WARN("Connect callback arrived but state={} (expected Connecting)",
+                             convertStateToString(self->state_.load()));
                     return;
                 }
 
@@ -103,39 +133,57 @@ void GameController::doStart(const std::string& host, std::uint16_t port, std::s
 
 void GameController::doShutdown() {
     LOG_INFO("Shutting down transport (state: {})", convertStateToString(state_.load()));
-
+    ++connectGen_;  // invalidate any in-flight connect callback
     tcp_->disconnect();
-    tcp_->setMessageCallback(nullptr);
-    tcp_->setDisconnectCallback(nullptr);
-
     setState(ClientState::Disconnected);
+    // Callbacks stay wired; the Disconnected guard in onMessageOnStrand()
+    // drops late messages, so rejoin()/start() reuse the same wiring.
 }
 
 void GameController::sendJoin() {
-    std::string wire = "JOIN " + playerName_;
     LOG_INFO("Sending JOIN as '{}'", playerName_);
-    tcp_->send(std::vector<std::uint8_t>(wire.begin(), wire.end()));
+    tcp_->send(protocol::encode(protocol::JoinMsg{playerName_}));
     setState(ClientState::Joining);
 }
 
 void GameController::onMessageOnStrand(const std::vector<std::uint8_t>& payload) {
-    if (payload.empty()) {
-        LOG_WARN("Received empty message from server");
+    if (state_.load() == ClientState::Disconnected) {
+        LOG_WARN("Dropping server message while Disconnected ({} bytes)", payload.size());
         return;
     }
 
-    const std::string_view msg(reinterpret_cast<const char*>(payload.data()), payload.size());
+    const protocol::ServerMsg msg = protocol::decode(payload);
 
-    if (msg.starts_with("ACCEPT")) {
-        LOG_INFO("JOIN accepted by server");
-        setState(ClientState::InGame);
-    } else if (msg.starts_with("REJECT")) {
-        LOG_WARN("JOIN rejected by server");
-        // mvp REJECT = disconnect, so TcpClient & GameController
-        // states synchronized (both Disconnected)
-        doShutdown();
-    } else {
-        LOG_WARN("Unknown server message ({} bytes): '{}'", payload.size(), msg);
+    switch (msg.type) {
+        case protocol::ServerMsgType::Accept:
+            LOG_INFO("ACCEPT (argument='{}')", msg.argument);
+            setState(ClientState::InGame);
+            break;
+
+        case protocol::ServerMsgType::Reject:
+            LOG_WARN("REJECT (argument='{}')", msg.argument);
+            // Server refused this session; treat as terminal for the
+            // current attempt. App may still rejoin() later.
+            doShutdown();
+            break;
+
+        case protocol::ServerMsgType::GameEnd:
+            LOG_INFO("GAME_END (argument='{}')", msg.argument);
+            // Design A: match over for this client. Socket is left open —
+            // the server may send a final score, or close it. Either way
+            // the app drives rejoin() from its own countdown.
+            setState(ClientState::GameOver);
+            break;
+
+        case protocol::ServerMsgType::Unknown: {
+            if (payload.empty()) {
+                LOG_WARN("Empty server message");
+            } else {
+                const std::string_view raw(reinterpret_cast<const char*>(payload.data()), payload.size());
+                LOG_WARN("Unknown server message ({} bytes): '{}'", payload.size(), raw);
+            }
+            break;
+        }
     }
 }
 
@@ -145,6 +193,44 @@ void GameController::setState(ClientState next) noexcept {
         return;
     state_.store(next);
     LOG_INFO("GameController state: {} -> {}", convertStateToString(current), convertStateToString(next));
+}
+
+bool GameController::validatePlayerName(const std::string& name) {
+    if (name.empty()) {
+        LOG_ERROR("playerName must not be empty");
+        return false;
+    }
+    for (unsigned char c : name) {
+        if (c <= 0x20 || c == 0x7f) {
+            LOG_ERROR("playerName must not contain whitespace or control characters");
+            return false;
+        }
+    }
+    return true;
+}
+
+void GameController::shoot() {
+    boost::asio::post(strand_, [self = shared_from_this()] {
+        self->doShoot();
+    });
+}
+
+void GameController::doShoot() {
+    // strand-only
+    if (state_.load() != ClientState::InGame) {
+        return;
+    }
+
+    if (!world_.isMyPlayerAlive()) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if ((now - last_shot_time_) < kShootCooldown) {
+        return;
+    }
+    last_shot_time_ = now;
+    tcp_->send(protocol::encodeShoot());
 }
 
 }  // namespace client
