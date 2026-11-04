@@ -114,11 +114,20 @@ public:
     }
 
     /**
-     * @brief Выдаёт указатель на сущность в котором лежит конкретная сущность по id или nullptr.
-     * @details Использует внутреннюю хэш-таблицу (id_to_indices_) для поиска за O(1).
+     * @brief (неконстантная версия) Выдаёт указатель на сущность в котором лежит конкретная сущность по id или nullptr.
+     * @details Вызывает константную версию.
      * @note Не потокобезопасен: читает storage_/free_indices_ без блокировок, см. классовый @note.
      */
     [[nodiscard]] Entity* findByEntityID(types::EntityId id) {
+        return const_cast<Entity*>(static_cast<const EntityPool*>(this)->findByEntityID(id));
+    }
+
+    /**
+     * @brief (константная версия) Выдаёт указатель на сущность в котором лежит конкретная сущность по id или nullptr.
+     * @details Использует внутреннюю хэш-таблицу (id_to_indices_) для поиска за O(1).
+     * @note Не потокобезопасен: читает storage_/free_indices_ без блокировок, см. классовый @note.
+     */
+    [[nodiscard]] const Entity* findByEntityID(types::EntityId id) const {
         auto it = id_to_indices_.find(id);
         if (it == id_to_indices_.end()) {
             return nullptr;
