@@ -15,8 +15,8 @@
 namespace domain {
 
 template <typename Predicate>
-concept NothrowGrowthPredicate = std::predicate<Predicate&, const math::Vector2D&, math::Scalar> &&
-                                 requires(Predicate& predicate, const math::Vector2D& position, math::Scalar radius) {
+concept NothrowGrowthPredicate = std::predicate<Predicate&, math::Vector2D&, math::Scalar> &&
+                                 requires(Predicate& predicate, math::Vector2D& position, math::Scalar radius) {
                                      { predicate(position, radius) } noexcept;
                                  };
 
@@ -75,11 +75,11 @@ struct Entity {
     std::optional<AsteroidComponent> asteroid;
 
     [[nodiscard]] static constexpr math::Scalar massForRadius(math::Scalar radius) noexcept {
-        return std::numbers::pi_v<math::Scalar> * radius * radius / 2.0;
+        return std::numbers::pi_v<math::Scalar> * radius * radius;
     }
 
     [[nodiscard]] bool addMass(math::Scalar amount) noexcept {
-        return addMass(amount, [](const math::Vector2D&, math::Scalar) noexcept {
+        return addMass(amount, [](math::Vector2D&, math::Scalar) noexcept {
             return true;
         });
     }

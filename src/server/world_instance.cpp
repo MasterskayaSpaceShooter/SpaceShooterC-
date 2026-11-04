@@ -361,8 +361,32 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
     domain::collision::onCollisionShipShip(ship1, ship2);
 }
 
-void WorldInstance::onCollision(domain::Entity& ship, domain::Entity& asteroid) {
-    domain::collision::onCollision(ship, asteroid);
+WorldInstance::GrowStatus WorldInstance::tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(radius) || radius < 0.0 ||
+        !std::isfinite(world_width_) || !std::isfinite(world_height_) || world_width_ <= 0.0 || world_height_ <= 0.0) {
+        LOG_ERROR("[WorldInstance] cannot grow ship with invalid position, radius, or world dimensions");
+        return GrowStatus::InvalidInput;
+    }
+
+    position = math::clampToWorldBounds(position, world_width_, world_height_);
+    if (math::circleIntersectsOppositeWorldBounds(position, radius, world_width_, world_height_)) {
+        return GrowStatus::CannotFit;
+    }
+    return GrowStatus::CanGrow;
+}
+
+void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
+    auto grow_status = GrowStatus::CanGrow;
+    const auto can_grow = [this, &grow_status](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+        grow_status = tryGrowShip(position, radius);
+        return grow_status == GrowStatus::CanGrow;
+    };
+    domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
+
+    if (grow_status == GrowStatus::CannotFit) {
+        ship.isDestroyed = true;
+        LOG_INFO("[WorldInstance] ship {} does not fit the world, destroyed", ship.id.get());
+    }
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
