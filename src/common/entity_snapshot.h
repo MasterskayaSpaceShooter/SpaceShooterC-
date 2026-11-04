@@ -13,6 +13,7 @@ struct TransformSnapshot {
     math::Vector2D velocity;
     math::Scalar angle;
 };
+using EntityId = std::uint64_t;
 
 struct ShipSnapshot {
     std::string name;
