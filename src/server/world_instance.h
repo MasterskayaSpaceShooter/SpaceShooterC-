@@ -21,11 +21,11 @@
 #include "thread_safe_queue.h"
 #include "types.h"
 
-enum class ActionType { PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
+enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
 struct ActionEvent {
     SessionId session_id{};
-    ActionType type{ActionType::PlayerJoin};
+    ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
     bool is_shooting{false};
@@ -345,6 +345,20 @@ private:
      */
     [[nodiscard]] std::vector<snapshot::LeaderboardEntry> buildLeaderboard() const;
 
+    /**
+     * @brief Колбек для подписки на событие PlayerJoinEvent
+     * @details Создаёт ActionType::PlayerJoin и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины PlayerJoinEvent
+     * @outputs Выходных значений нет.
+     */
+    void onPlayerJoin(const PlayerJoinEvent& event);
+
+    /**
+     * @brief Разрешает тестовому классу доступ к приватным данным WI
+     * @warning Используется только для тестов.
+     */
+    friend class WorldInstanceTestAccessor;
+
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
     enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
@@ -366,4 +380,5 @@ private:
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
+    boost::signals2::scoped_connection sub_player_join_;
 };
