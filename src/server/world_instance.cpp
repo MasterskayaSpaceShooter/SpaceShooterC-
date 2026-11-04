@@ -532,6 +532,7 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
+<<<<<<< HEAD
     sub_shoot_ = event_bus_->subscribe<ShotMessageEvent>([weak_self](const ShotMessageEvent& event) {
         if (auto world = weak_self.lock()) {
             world->onShotReceived(event);
@@ -539,6 +540,14 @@ void WorldInstance::setupSubscriptions() {
     });
 
     // далее другие подписки
+    == == == =
+                 // подписка на движения клиента
+        sub_player_move_ = event_bus_->subscribe<PlayerMoveEvent>([weak_self](const PlayerMoveEvent& event) {
+            if (auto world = weak_self.lock()) {
+                world->onPlayerMove(event);
+            }
+        });
+>>>>>>> 2ff3496 (Added event PlayerMoveEvent in event_bus)
 }
 
 void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
@@ -565,4 +574,13 @@ void WorldInstance::onShotReceived(const ShotMessageEvent& event) {
     action.is_shooting = true;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] MoveAndShoot for session {}", event.session_id);
+}
+
+void WorldInstance::onPlayerMove(const PlayerMoveEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::MoveAndShoot;
+    action.session_id = event.session_id;
+
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] PlayerMove: {}: move", event.session_id);
 }

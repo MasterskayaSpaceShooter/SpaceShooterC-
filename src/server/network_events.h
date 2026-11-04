@@ -119,3 +119,19 @@ struct ShotMessageEvent : public NetworkEvent {
 struct ShipDestroyedEvent : public NetworkEvent {
     explicit ShipDestroyedEvent(SessionId id) : NetworkEvent(id) {}
 };
+
+/**
+ * @brief Событие: Клиент прислал команду MOVE.
+ * @details Генерируется NetworkResponseRouter::onMessageReceived, когда payload
+ *          NetworkMessageEvent равен "MOVE".
+ */
+struct PlayerMoveEvent : public NetworkEvent {
+    types::Direction direction;
+
+    /**
+     * @brief Конструктор события движения игрока.
+     * @param id Входные данные: ID сессии.
+     * @param direction Входные данные: направление: up, down, left, right.
+     */
+    PlayerMoveEvent(SessionId id, types::Direction direction) : NetworkEvent(id), direction(direction) {}
+};
