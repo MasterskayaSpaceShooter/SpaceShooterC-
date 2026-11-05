@@ -215,7 +215,6 @@ void WorldInstance::runTickStep() {
         updatePhysics(static_cast<float>(tick_interval_.count()) / 1'000'000.0f);
         resolveCollisions();
         maintainAsteroidPopulation();
-        asteroid_factory_.update(freePosition());
         // Спавн после физики: корабли новичков не участвуют в расчётах текущего тика.
         spawnShips(new_players);
 
@@ -418,7 +417,7 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
-    // TODO: поддерживать количество астероидов на карте через asteroid_factory_.
+    asteroid_factory_.update(freePosition());
 }
 
 void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {

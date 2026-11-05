@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "asteroid_factory.h"
 #include "event_bus.h"
 #include "frame_codec.h"
 #include "logger.h"

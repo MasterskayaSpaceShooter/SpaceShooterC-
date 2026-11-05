@@ -42,7 +42,6 @@ void AsteroidFactory::update(const math::Circle& free_coordinates) {
         entity->asteroid.emplace();                                                        // default initialize
         entity->health.emplace();                                                          // default initialize
         entity->asteroid->score_reward = static_cast<uint16_t>(free_weight[i]);            // set random weight
-        entity->transform->position = rand_positions[i];                                   // set random pos
     }
 }
 
