@@ -29,9 +29,10 @@ inline void applyPercentageDamage(Entity& entity, std::uint16_t percentage) noex
 }
 
 // Рассчитывает упругий импульс при столкновении корабля с астероидом.
-// Если позиции совпадают, использует направление корабля как нормаль столкновения.
-inline void repelAsteroid(Entity& ship, Entity& asteroid) {
-    if (!ship.transform || !asteroid.transform) {
+// При совпадении позиций использует направление корабля как нормаль столкновения.
+inline void repelAsteroid(Entity& ship, Entity& asteroid) noexcept {
+    if (!ship.transform || !asteroid.transform || !std::isfinite(ship.mass) || !std::isfinite(asteroid.mass) ||
+        ship.mass <= 0.0 || asteroid.mass <= 0.0) {
         return;
     }
 

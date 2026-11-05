@@ -376,9 +376,13 @@ private:
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
     enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
     [[nodiscard]] GrowStatus tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept;
+    /// Проверяет пересечения корабля с предполагаемым радиусом после роста.
+    /// При столкновении обрабатывает другой корабль или вражескую пулю;
+    /// поглощаемый астероид и собственные пули корабля пропускаются.
     void checkForIntersections(domain::Entity& ship,
                                const domain::Entity& consumed_asteroid,
-                               math::Scalar candidate_radius);
+                               const math::Vector2D& candidate_position,
+                               math::Scalar candidate_radius) noexcept;
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 

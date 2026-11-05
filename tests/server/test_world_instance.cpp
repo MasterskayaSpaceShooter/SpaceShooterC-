@@ -40,7 +40,7 @@ public:
     }
 };
 
-TEST(WorldInstance, ShipGrowingIntoAnotherShipResolvesCollision) {
+TEST(WorldInstance, GrowingShipResolvesCollisionWithNearbyShip) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
 
@@ -145,7 +145,7 @@ TEST(WorldInstance, ShipGrowingIntoEnemyBulletTakesDamageAndDestroysBullet) {
     EXPECT_TRUE(asteroid.isDestroyed);
 }
 
-TEST(WorldInstance, ShipGrowingIntoItsOwnBulletDoesNotCauseCollision) {
+TEST(WorldInstance, GrowingShipIgnoresItsOwnBullet) {
     boost::asio::io_context io_context;
     auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
 
