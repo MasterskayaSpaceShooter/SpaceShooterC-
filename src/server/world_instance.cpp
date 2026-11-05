@@ -447,6 +447,7 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
         std::copy_n(join.player_name.data(), len, ship.name.begin());
         ship.thrust_power = world::kShipDefaultThrustPower;
         ship.drag = world::kShipDefaultDrag;
+        ship.is_thrusting = true;
         entity->ship = ship;
 
         entity->health = domain::HealthComponent{world::kShipDefaultHealth, world::kShipDefaultHealth};
