@@ -580,7 +580,7 @@ void WorldInstance::onPlayerMove(const PlayerMoveEvent& event) {
     ActionEvent action;
     action.type = ActionType::MoveAndShoot;
     action.session_id = event.session_id;
-
+    action.angle = event.angle;
     enqueueAction(std::move(action));
-    LOG_INFO("[WorldInstance] PlayerMove: {}: move", event.session_id);
+    LOG_INFO("[WorldInstance] PlayerMove: {}: move on angle {}", event.session_id, event.angle);
 }

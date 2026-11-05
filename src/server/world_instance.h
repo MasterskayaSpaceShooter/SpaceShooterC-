@@ -29,6 +29,7 @@ struct ActionEvent {
     ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
+    double angle{};
     bool is_shooting{false};
     std::string player_name{};
 };
