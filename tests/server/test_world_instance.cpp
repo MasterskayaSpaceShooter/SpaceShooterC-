@@ -24,8 +24,7 @@ public:
     static auto GetEntityCountWithStatusAlive(const WorldInstance& world) {
         size_t count = 0;
         for (const auto& slot : world.entities_.storage()) {
-            if (slot.has_value() && !slot->isDestroyed &&
-                slot->type == types::EntityType::Ship) {
+            if (slot.has_value() && !slot->isDestroyed && slot->type == types::EntityType::Ship) {
                 count++;
             }
         }
