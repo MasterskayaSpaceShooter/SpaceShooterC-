@@ -386,18 +386,18 @@ private:
      */
     void onShotReceived(const ShotMessageEvent& event);
 
-    std::atomic<std::uint64_t> current_tick_{0};             ///< Номер текущего тика
-    ThreadSafeQueue<ActionEvent> action_queue_;              ///< Очередь действий игроков
-    [[maybe_unused]] domain::EntityPool entities_;           ///< Пул сущностей мира
+    std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
+    ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
+    [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
     std::vector<snapshot::EntitySnapshot> snapshot_buffer_;  ///< Переиспользуемый буфер снимков между тиками
-    std::shared_ptr<events::EventBus> event_bus_;            ///< Шина событий сервера
+    std::shared_ptr<events::EventBus> event_bus_;  ///< Шина событий сервера
     boost::asio::strand<boost::asio::io_context::executor_type> tick_strand_;  ///< Сериализация всех операций цикла
-    boost::asio::steady_timer tick_timer_;                                     ///< Таймер игровых тиков
-    std::chrono::microseconds tick_interval_;                                  ///< Интервал одного тика
-    mutable std::mutex action_mutex_;                                 ///< Синхронизация enqueueAction() с остановкой
-    math::Scalar world_width_{world::kDefaultWidth};                  ///< Ширина мира
-    math::Scalar world_height_{world::kDefaultHeight};                ///< Высота мира
-    std::atomic<State> state_{State::Stopped};                        ///< Состояние жизненного цикла игрового цикла
+    boost::asio::steady_timer tick_timer_;     ///< Таймер игровых тиков
+    std::chrono::microseconds tick_interval_;  ///< Интервал одного тика
+    mutable std::mutex action_mutex_;          ///< Синхронизация enqueueAction() с остановкой
+    math::Scalar world_width_{world::kDefaultWidth};    ///< Ширина мира
+    math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
+    std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     boost::signals2::scoped_connection sub_shoot_;                    ///< Подписка на выстрел
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля

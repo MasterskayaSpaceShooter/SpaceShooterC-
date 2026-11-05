@@ -310,25 +310,24 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                     auto ship_id = it->second;
 
                     if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
-                        if (action.move_direction.lengthSquared() > 0) {
-                            entity->transform->angle = action.angle;
-                            ship = &(*entity);
-                        }
+                        if (ship->transform.has_value()) {
+                            ship->transform->angle = action.angle;
 
-                        if (action.is_shooting) {
-                            auto bullet = entities_.acquire();
-                            bullet->type = types::EntityType::Bullet;
-                            bullet->radius = world::kBulletRadius;
-                            bullet->transform = domain::TransformComponent{};
-                            bullet->combat = domain::CombatComponent{};
+                            if (action.is_shooting) {
+                                auto bullet = entities_.acquire();
+                                bullet->type = types::EntityType::Bullet;
+                                bullet->radius = world::kBulletRadius;
+                                bullet->transform = domain::TransformComponent{};
+                                bullet->combat = domain::CombatComponent{};
 
-                            auto angle = ship->transform->angle;
-                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
-                            bullet->transform->position = ship->transform->position + (direction * ship->radius);
-                            bullet->transform->velocity = direction * world::kBulletSpeed;
+                                auto angle = ship->transform->angle;
+                                math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                                bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                                bullet->transform->velocity = direction * world::kBulletSpeed;
 
-                            bullet->combat->owner_id = ship_id;
-                            bullet->combat->damage = world::kBulletDamage;
+                                bullet->combat->owner_id = ship_id;
+                                bullet->combat->damage = world::kBulletDamage;
+                            }
                         }
                     }
                 }
@@ -534,22 +533,18 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
-<<<<<<< HEAD
     sub_shoot_ = event_bus_->subscribe<ShotMessageEvent>([weak_self](const ShotMessageEvent& event) {
         if (auto world = weak_self.lock()) {
             world->onShotReceived(event);
         }
     });
 
-    // далее другие подписки
-    == == == =
-                 // подписка на движения клиента
-        sub_player_move_ = event_bus_->subscribe<PlayerMoveEvent>([weak_self](const PlayerMoveEvent& event) {
-            if (auto world = weak_self.lock()) {
-                world->onPlayerMove(event);
-            }
-        });
->>>>>>> 2ff3496 (Added event PlayerMoveEvent in event_bus)
+    // подписка на движения клиента
+    sub_player_move_ = event_bus_->subscribe<PlayerMoveEvent>([weak_self](const PlayerMoveEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onPlayerMove(event);
+        }
+    });
 }
 
 void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
