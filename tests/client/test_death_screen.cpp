@@ -26,7 +26,7 @@ TEST(DeathScreenTest, ActivatesWhenPlayerDiesAndDeactivatesOnRespawn) {
     types::EntityId my_id{1};
 
     // 1. Игрок жив (есть в entities_ и is_destroyed = false)
-    snapshot::EntitySnapshot alive_ship;
+    snapshot::EntitySnapshot alive_ship{};
     alive_ship.id = my_id;
     alive_ship.is_destroyed = false;
 
@@ -36,7 +36,7 @@ TEST(DeathScreenTest, ActivatesWhenPlayerDiesAndDeactivatesOnRespawn) {
     EXPECT_FALSE(screen.isActive());  // Экран скрыт
 
     // 2. Игрок умирает (is_destroyed = true)
-    snapshot::EntitySnapshot dead_ship;
+    snapshot::EntitySnapshot dead_ship{};
     dead_ship.id = my_id;
     dead_ship.is_destroyed = true;
 
