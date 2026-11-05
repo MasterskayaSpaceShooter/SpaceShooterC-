@@ -295,11 +295,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            entity->isDestroyed = true;
-                            break;
-                        }
+                    if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
+                        ship->isDestroyed = true;
                     }
                     session_to_ship_.erase(action.session_id);
                 }
@@ -311,34 +308,27 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
-                    domain::Entity* ship = nullptr;
 
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            if (entity->transform.has_value()) {
-                                if (action.move_direction.lengthSquared() > 0) {
-                                    entity->transform->velocity = action.move_direction;
-                                }
-                                ship = &(*entity);
-                                break;
-                            }
+                    if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
+                        if (action.move_direction.lengthSquared() > 0) {
+                            ship->transform->velocity = action.move_direction;
                         }
-                    }
 
-                    if (ship && action.is_shooting) {
-                        auto bullet = entities_.acquire();
-                        bullet->type = types::EntityType::Bullet;
-                        bullet->radius = world::kBulletRadius;
-                        bullet->transform = domain::TransformComponent{};
-                        bullet->combat = domain::CombatComponent{};
+                        if (action.is_shooting) {
+                            auto bullet = entities_.acquire();
+                            bullet->type = types::EntityType::Bullet;
+                            bullet->radius = world::kBulletRadius;
+                            bullet->transform = domain::TransformComponent{};
+                            bullet->combat = domain::CombatComponent{};
 
-                        auto angle = ship->transform->angle;
-                        math::Vector2D direction{std::cos(angle), std::sin(angle)};
-                        bullet->transform->position = ship->transform->position + (direction * ship->radius);
-                        bullet->transform->velocity = direction * world::kBulletSpeed;
+                            auto angle = ship->transform->angle;
+                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                            bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                            bullet->transform->velocity = direction * world::kBulletSpeed;
 
-                        bullet->combat->owner_id = ship_id;
-                        bullet->combat->damage = world::kBulletDamage;
+                            bullet->combat->owner_id = ship_id;
+                            bullet->combat->damage = world::kBulletDamage;
+                        }
                     }
                 }
                 break;

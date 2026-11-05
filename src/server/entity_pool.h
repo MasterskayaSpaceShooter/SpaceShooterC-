@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "entity.h"
@@ -41,12 +42,14 @@ public:
             free_indices_.pop_back();
             storage_[idx].emplace();
             storage_[idx]->id = types::EntityId{next_id_++};
+            id_to_indices_[storage_[idx]->id] = idx;
             return &*storage_[idx];
         }
 
         storage_.emplace_back();
         storage_.back().emplace();
         storage_.back()->id = types::EntityId{next_id_++};
+        id_to_indices_[storage_.back()->id] = storage_.size() - 1;
         return &*storage_.back();
     }
 
@@ -65,6 +68,7 @@ public:
         for (std::size_t i = 0; i < storage_.size(); ++i) {
             auto& slot = storage_[i];
             if (slot && slot->isDestroyed) {
+                id_to_indices_.erase(slot->id);
                 free_indices_.push_back(i);
                 slot.reset();
             }
@@ -109,9 +113,37 @@ public:
         return storage_.size() - free_indices_.size();
     }
 
+    /**
+     * @brief (неконстантная версия) Выдаёт указатель на сущность в котором лежит конкретная сущность по id или nullptr.
+     * @details Вызывает константную версию.
+     * @note Не потокобезопасен: читает storage_/free_indices_ без блокировок, см. классовый @note.
+     */
+    [[nodiscard]] Entity* findByEntityID(types::EntityId id) {
+        return const_cast<Entity*>(static_cast<const EntityPool*>(this)->findByEntityID(id));
+    }
+
+    /**
+     * @brief (константная версия) Выдаёт указатель на сущность в котором лежит конкретная сущность по id или nullptr.
+     * @details Использует внутреннюю хэш-таблицу (id_to_indices_) для поиска за O(1).
+     * @note Не потокобезопасен: читает storage_/free_indices_ без блокировок, см. классовый @note.
+     */
+    [[nodiscard]] const Entity* findByEntityID(types::EntityId id) const {
+        auto it = id_to_indices_.find(id);
+        if (it == id_to_indices_.end()) {
+            return nullptr;
+        }
+
+        auto& slot = storage_[it->second];
+        if (!slot.has_value()) {
+            return nullptr;
+        }
+        return &*slot;
+    }
+
 private:
     std::deque<std::optional<Entity>> storage_;
     std::vector<std::size_t> free_indices_;
+    std::unordered_map<types::EntityId, std::size_t> id_to_indices_;
     uint64_t next_id_{1};
 };
 
