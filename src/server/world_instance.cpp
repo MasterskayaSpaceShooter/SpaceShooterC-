@@ -361,6 +361,10 @@ void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& s
     domain::collision::onCollisionShipShip(ship1, ship2);
 }
 
+bool WorldInstance::onCollisionBulletBounds(domain::Entity& proj) {
+    return domain::collision::onCollisionBulletBounds(proj, world_width_, world_height_);
+}
+
 WorldInstance::GrowStatus WorldInstance::tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept {
     if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(radius) || radius < 0.0 ||
         !std::isfinite(world_width_) || !std::isfinite(world_height_) || world_width_ <= 0.0 || world_height_ <= 0.0) {

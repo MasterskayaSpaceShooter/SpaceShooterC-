@@ -226,4 +226,45 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
     std::forward<OnHit>(on_hit)(owner_id, ship_destroyed);
 }
 
+/**
+ * @brief Destroys a bullet that has left the world bounds.
+ *
+ * Bullets with non-finite positions, without a transform, or whose position
+ * falls outside the world rectangle are marked as
+ * destroyed. Non-bullet entities are ignored.
+ */
+inline bool onCollisionBulletBounds(Entity& bullet, math::Scalar world_width, math::Scalar world_height) noexcept {
+    if (bullet.type != types::EntityType::Bullet) {
+        return false;
+    }
+
+    if (!bullet.isValid() || !bullet.transform.has_value()) {
+        return false;
+    }
+
+    const auto& pos = bullet.transform->position;
+
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y)) {
+        bullet.isDestroyed = true;
+        LOG_WARN("[Collision] Bullet {} destroyed: non-finite position ({}, {})", bullet.id.get(), pos.x, pos.y);
+        return true;
+    }
+
+    const math::Scalar r = bullet.radius;
+    const bool out_of_bounds =
+        pos.x - r < 0.0 || pos.x + r > world_width || pos.y - r < 0.0 || pos.y + r > world_height;
+
+    if (out_of_bounds) {
+        bullet.isDestroyed = true;
+        LOG_INFO("[Collision] Bullet {} destroyed: out of world bounds ({}, {}), world {}x{}",
+                 bullet.id.get(),
+                 pos.x,
+                 pos.y,
+                 world_width,
+                 world_height);
+        return true;
+    }
+    return false;
+}
+
 }  // namespace domain::collision
