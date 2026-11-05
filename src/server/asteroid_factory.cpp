@@ -32,8 +32,8 @@ void AsteroidFactory::update(const math::Circle& free_coordinates) {
     // create_random_asteroids
     for (size_t i = 0; i < free_weight.size(); ++i) {
         domain::Entity* entity = entity_pool_.acquire();  // get asteroid from entity pool
-        entity->type = types::EntityType::Asteroid;        // set type
-        entity->mass = free_weight[i];                     // set weight
+        entity->type = types::EntityType::Asteroid;       // set type
+        entity->mass = free_weight[i];                    // set weight
         entity->radius = free_weight[i] < MAX_WEIGHT_FOR_RADIUS ? free_weight[i] * MAX_RADIUS_COUNTER
                                                                 : free_weight[i] * MIN_RADIUS_COUNTER;
         // if the weight is small we multiplying by 5, if the weight is large we multiplying by 2.5
@@ -96,11 +96,10 @@ std::vector<math::Vector2D> AsteroidFactory::generatePositions(const size_t pos_
 
     for (size_t i = 0; i < pos_count; ++i) {
         const double angle = two_pi * dist01(g_rng);
-        const double r     = free_coordinates.radius * std::sqrt(dist01(g_rng));
+        const double r = free_coordinates.radius * std::sqrt(dist01(g_rng));
 
-        positions.emplace_back(
-            free_coordinates.center.x + static_cast<math::Scalar>(r * std::cos(angle)),
-            free_coordinates.center.y + static_cast<math::Scalar>(r * std::sin(angle)));
+        positions.emplace_back(free_coordinates.center.x + static_cast<math::Scalar>(r * std::cos(angle)),
+                               free_coordinates.center.y + static_cast<math::Scalar>(r * std::sin(angle)));
     }
     return positions;
 }

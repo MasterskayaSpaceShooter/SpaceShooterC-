@@ -27,8 +27,7 @@ public:
     void update(const math::Circle& free_coordinates);
     std::vector<AsteroidData> createSplitAsteroid(const AsteroidData& parent);
     std::vector<double> generateAsteroidWeight(const double current_weight);
-    std::vector<math::Vector2D> generatePositions(const size_t pos_count,
-                                                 const math::Circle& free_coordinates);
+    std::vector<math::Vector2D> generatePositions(const size_t pos_count, const math::Circle& free_coordinates);
 
 private:
     double calculateCurrentWeight() const;

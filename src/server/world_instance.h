@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "asteroid_factory.h"
 #include "config.h"
 #include "entity_pool.h"
 #include "event_bus.h"
@@ -20,7 +21,6 @@
 #include "network_events.h"
 #include "thread_safe_queue.h"
 #include "types.h"
-#include "asteroid_factory.h"
 
 enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
