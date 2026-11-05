@@ -133,5 +133,5 @@ struct PlayerMoveEvent : public NetworkEvent {
      * @param id Входные данные: ID сессии.
      * @param direction Входные данные: направление: up, down, left, right.
      */
-    PlayerMoveEvent(SessionId id, double direcangletion) : NetworkEvent(id), angle(angle) {}
+    PlayerMoveEvent(SessionId id, double angle) : NetworkEvent(id), angle(angle) {}
 };
