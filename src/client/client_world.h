@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <vector>
 
 #include "death_screen.h"
 #include "entity_snapshot.h"
@@ -8,6 +9,8 @@
 #include "types.h"
 
 namespace client {
+
+class DeathScreen;  // <-- Forward declaration
 class ClientWorld {
 public:
     ClientWorld() = default;

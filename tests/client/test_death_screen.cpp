@@ -23,7 +23,7 @@ public:
 TEST(DeathScreenTest, ActivatesWhenPlayerDiesAndDeactivatesOnRespawn) {
     client::ClientWorld world;
     client::DeathScreen screen;
-    types::EntityId my_id = 1;
+    types::EntityId my_id{1};
 
     // 1. Игрок жив (есть в entities_ и is_destroyed = false)
     snapshot::EntitySnapshot alive_ship;

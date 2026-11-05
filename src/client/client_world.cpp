@@ -1,5 +1,7 @@
 #include "client_world.h"
 
+#include "death_screen.h"
+
 namespace client {
 
 void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& game_snapshot, types::EntityId my_player_id) {
