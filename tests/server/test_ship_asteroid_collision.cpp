@@ -41,8 +41,9 @@ TEST(ShipAsteroidCollisionTest, RepelStubDoesNotChangeVelocities) {
     EXPECT_EQ(asteroid.transform->velocity, (math::Vector2D{}));
 }
 
-TEST(ShipAsteroidCollisionTest, EatsAsteroidBelowHalfShipMass) {
+TEST(ShipAsteroidCollisionTest, EatingAsteroidAddsItsScoreReward) {
     auto ship = MakeShip(200.0);
+    ship.ship->score = 20;
     auto asteroid = MakeAsteroid(99.0);
     asteroid.asteroid->score_reward = 15;
 
@@ -50,7 +51,7 @@ TEST(ShipAsteroidCollisionTest, EatsAsteroidBelowHalfShipMass) {
 
     EXPECT_TRUE(asteroid.isDestroyed);
     EXPECT_DOUBLE_EQ(ship.mass, 299.0);
-    EXPECT_EQ(ship.ship->score, 15u);
+    EXPECT_EQ(ship.ship->score, 35u);
     EXPECT_EQ(ship.health->current, 80);
 }
 
@@ -208,7 +209,7 @@ TEST(ShipAsteroidCollisionTest, GrowAtWall_ClampsPosition) {
     auto asteroid = MakeAsteroid(0.4 * ship.mass);  // ratio 0.4 — съедобно
     asteroid.asteroid->score_reward = 10;
 
-    const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+    const auto can_grow = [](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
         const auto min_x = -half_width + radius;
         const auto max_x = half_width - radius;
         const auto min_y = -half_height + radius;
@@ -241,7 +242,7 @@ TEST(ShipAsteroidCollisionTest, GrowTooBigForWorld_KeepPositionAndAllowGrowth) {
     auto asteroid = MakeAsteroid(1400.0);  // ratio < 0.5 — съедобно
     asteroid.asteroid->score_reward = 5;
 
-    const auto can_grow = [half_width, half_height](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+    const auto can_grow = [](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
         const auto min_x = -half_width + radius;
         const auto max_x = half_width - radius;
         const auto min_y = -half_height + radius;
