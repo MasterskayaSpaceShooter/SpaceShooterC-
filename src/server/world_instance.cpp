@@ -341,8 +341,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
     }
 }
 
-void WorldInstance::updatePhysics(math::Scalar) {
-    // TODO: обновить позиции кораблей, снарядов и астероидов за интервал тика (dt).
+void WorldInstance::updatePhysics(math::Scalar dt) {
+    domain::updateMovementAndBounds(entities_.storage(), dt, world_width_, world_height_);
 }
 
 void WorldInstance::resolveCollisions() {
