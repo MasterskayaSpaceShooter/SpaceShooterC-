@@ -311,7 +311,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
 
                     if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
                         if (action.move_direction.lengthSquared() > 0) {
-                            ship->transform->velocity = action.move_direction;
+                            entity->transform->angle = action.angle;
+                            ship = &(*entity);
                         }
 
                         if (action.is_shooting) {
