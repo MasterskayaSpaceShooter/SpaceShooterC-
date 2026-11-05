@@ -41,6 +41,19 @@ TEST(ShipAsteroidCollisionTest, RepelsAsteroidWithElasticImpulse) {
     EXPECT_GT(asteroid.transform->velocity.x, 0.0);
 }
 
+TEST(ShipAsteroidCollisionTest, RepelsAsteroidWhenShipIsFiveTimesHeavier) {
+    auto ship = MakeShip(500.0);
+    auto asteroid = MakeAsteroid(100.0);
+    ship.transform->velocity = {10.0, 0.0};
+    asteroid.transform->position = {10.0, 0.0};
+
+    domain::collision::onCollisionShipAsteroid(ship, asteroid);
+
+    EXPECT_LT(ship.transform->velocity.x, 10.0);
+    EXPECT_GT(asteroid.transform->velocity.x, 0.0);
+    EXPECT_FALSE(asteroid.isDestroyed);
+}
+
 TEST(ShipAsteroidCollisionTest, EatingAsteroidAddsItsScoreReward) {
     auto ship = MakeShip(200.0);
     ship.ship->score = 20;

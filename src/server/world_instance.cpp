@@ -481,7 +481,7 @@ void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity
                                                                  math::Scalar radius) noexcept -> bool {
         grow_status = tryGrowShip(position, radius);
         if (grow_status == GrowStatus::CanGrow) {
-            checkForIntersections(ship, asteroid, radius);
+            checkForIntersections(ship, asteroid, position, radius);
         }
         return grow_status == GrowStatus::CanGrow;
     };
@@ -521,16 +521,16 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
 
 void WorldInstance::checkForIntersections(domain::Entity& ship,
                                           const domain::Entity& consumed_asteroid,
-                                          math::Scalar candidate_radius) {
-    if (!ship.transform || !ship.isValid() || !ship.isDamageable() || !std::isfinite(candidate_radius) ||
-        candidate_radius < 0.0) {
+                                          const math::Vector2D& candidate_position,
+                                          math::Scalar candidate_radius) noexcept {
+    if (!ship.isValid() || !ship.isDamageable() || !std::isfinite(candidate_position.x) ||
+        !std::isfinite(candidate_position.y) || !std::isfinite(candidate_radius) || candidate_radius < 0.0) {
         return;
     }
 
-    const auto& ship_position = ship.transform->position;
     for (auto& slot : entities_.storage()) {
-        if (!entities_.isActive(slot) || !slot->transform || !std::isfinite(slot->radius) || slot->radius < 0.0 ||
-            !std::isfinite(slot->transform->position.x) || !std::isfinite(slot->transform->position.y)) {
+        if (!entities_.isActive(slot) || !slot->transform || !std::isfinite(slot->transform->position.x) ||
+            !std::isfinite(slot->transform->position.y) || !std::isfinite(slot->radius) || slot->radius < 0.0) {
             continue;
         }
 
@@ -539,7 +539,7 @@ void WorldInstance::checkForIntersections(domain::Entity& ship,
             continue;
         }
 
-        const auto delta = ship_position - other.transform->position;
+        const auto delta = candidate_position - other.transform->position;
         const auto radius_sum = candidate_radius + other.radius;
         if (delta.lengthSquared() > radius_sum * radius_sum) {
             continue;
