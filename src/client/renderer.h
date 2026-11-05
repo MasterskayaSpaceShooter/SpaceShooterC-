@@ -7,7 +7,7 @@
 
 namespace client {
 
-class ClientWorld; // <-- Forward declaration
+class ClientWorld;  // <-- Forward declaration
 
 /**
  * @brief Интерфейс рендера клиента.
