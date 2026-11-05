@@ -2,6 +2,7 @@
 
 #include "client_world.h"
 #include "death_screen.h"
+#include "game_snapshot.h"
 #include "null_renderer.h"
 
 namespace {
@@ -18,6 +19,37 @@ public:
 };
 
 }  // namespace
+
+TEST(DeathScreenTest, ActivatesWhenPlayerDiesAndDeactivatesOnRespawn) {
+    client::ClientWorld world;
+    client::DeathScreen screen;
+    types::EntityId my_id = 1;
+
+    // 1. Игрок жив (есть в entities_ и is_destroyed = false)
+    snapshot::EntitySnapshot alive_ship;
+    alive_ship.id = my_id;
+    alive_ship.is_destroyed = false;
+
+    snapshot::GameSnapshot snapshot_alive({alive_ship}, {}, 1);
+    world.updateSnapshot(snapshot_alive, my_id);
+    world.updateDeathScreen(screen);
+    EXPECT_FALSE(screen.isActive());  // Экран скрыт
+
+    // 2. Игрок умирает (is_destroyed = true)
+    snapshot::EntitySnapshot dead_ship;
+    dead_ship.id = my_id;
+    dead_ship.is_destroyed = true;
+
+    snapshot::GameSnapshot snapshot_dead({dead_ship}, {}, 2);
+    world.updateSnapshot(snapshot_dead, my_id);
+    world.updateDeathScreen(screen);
+    EXPECT_TRUE(screen.isActive());  // Экран показан
+
+    // 3. Игрок возрождается (снова is_destroyed = false)
+    world.updateSnapshot(snapshot_alive, my_id);
+    world.updateDeathScreen(screen);
+    EXPECT_FALSE(screen.isActive());  // Экран скрыт
+}
 
 TEST(DeathScreenTest, InitiallyInactive) {
     client::DeathScreen screen;

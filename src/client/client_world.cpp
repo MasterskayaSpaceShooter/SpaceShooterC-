@@ -13,6 +13,11 @@ void ClientWorld::updateSnapshot(const snapshot::GameSnapshot& game_snapshot, ty
     }
 }
 
+void ClientWorld::updateDeathScreen(DeathScreen& death_screen) const {
+    // Активируем экран, если игрок мертв, и деактивируем, если жив (respawn)
+    death_screen.setActive(!isMyPlayerAlive());
+}
+
 bool ClientWorld::isMyPlayerAlive() const {
     const auto it = entities_.find(my_player_id_);
     if (it == entities_.end()) {

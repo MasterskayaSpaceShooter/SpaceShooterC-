@@ -14,8 +14,8 @@ void DeathScreen::render(IRenderer& renderer, int finalScore, int place) {
     const std::string title = "YOU DIED";
     const std::string stats = std::format("Score: {} | Place: {}", finalScore, place);
 
-    renderer.drawText(title, 400, 300);
-    renderer.drawText(stats, 400, 330);
+    renderer.drawText(title, kStartX, kTitleY);
+    renderer.drawText(stats, kStartX, kStatsY);
 }
 
 }  // namespace client

@@ -35,6 +35,9 @@ public:
     void render(IRenderer& renderer, int finalScore, int place);
 
 private:
+    static constexpr int kStartX = 400;
+    static constexpr int kTitleY = 300;
+    static constexpr int kStatsY = 330;
     bool is_active_{false};
 };
 
