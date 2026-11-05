@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "asteroid_factory.h"
 #include "config.h"
 #include "entity_pool.h"
 #include "event_bus.h"
@@ -383,4 +384,5 @@ private:
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
     boost::signals2::scoped_connection sub_player_join_;
+    asteroid_factory::AsteroidFactory asteroid_factory_;
 };
