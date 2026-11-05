@@ -1,23 +1,16 @@
 #include "asteroid_factory.h"
 
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 namespace asteroid_factory {
 
 thread_local std::mt19937 g_rng{std::random_device{}()};
 
-AsteroidFactory::AsteroidFactory(std::shared_ptr<domain::EntityPool> entity_pool) {
-    if (!entity_pool) {
-        throw std::invalid_argument("entity_pool must not be null");
-    }
-    entity_pool_ = entity_pool;
-}
+AsteroidFactory::AsteroidFactory(domain::EntityPool& entity_pool) : entity_pool_(entity_pool) {}
 
-void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates) {
-    if (free_coordinates.empty()) {
-        return;
-    }
-
+void AsteroidFactory::update(const math::Circle& free_coordinates) {
     const double current_weight = calculateCurrentWeight();
 
     if (current_weight >= MIN_ASTEROIDS_WEIGHT) {
@@ -38,7 +31,7 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
 
     // create_random_asteroids
     for (size_t i = 0; i < free_weight.size(); ++i) {
-        domain::Entity* entity = entity_pool_->acquire();  // get asteroid from entity pool
+        domain::Entity* entity = entity_pool_.acquire();  // get asteroid from entity pool
         entity->type = types::EntityType::Asteroid;        // set type
         entity->mass = free_weight[i];                     // set weight
         entity->radius = free_weight[i] < MAX_WEIGHT_FOR_RADIUS ? free_weight[i] * MAX_RADIUS_COUNTER
@@ -56,7 +49,7 @@ void AsteroidFactory::update(const std::vector<math::Vector2D>& free_coordinates
 double AsteroidFactory::calculateCurrentWeight() const {
     double total_weight = 0.0;
 
-    for (const auto& slot : entity_pool_->storage()) {
+    for (const auto& slot : entity_pool_.storage()) {
         if (slot.has_value() && !slot->isDestroyed && slot->type == types::EntityType::Asteroid) {
             total_weight += slot->mass;
         }
@@ -90,13 +83,25 @@ std::vector<double> AsteroidFactory::generateAsteroidWeight(const double current
 }
 
 std::vector<math::Vector2D> AsteroidFactory::generatePositions(const size_t pos_count,
-                                                               const std::vector<math::Vector2D>& free_coordinates) {
-    if (pos_count != free_coordinates.size() || pos_count == 0 || free_coordinates.empty() ||
-        pos_count > free_coordinates.size())
+                                                               const math::Circle& free_coordinates) {
+    if (pos_count == 0 || free_coordinates.radius <= 0.0) {
         return {};
+    }
+
     std::vector<math::Vector2D> positions;
     positions.reserve(pos_count);
-    std::sample(free_coordinates.begin(), free_coordinates.end(), std::back_inserter(positions), pos_count, g_rng);
+
+    std::uniform_real_distribution<double> dist01(0.0, 1.0);
+    const double two_pi = 2.0 * std::numbers::pi;
+
+    for (size_t i = 0; i < pos_count; ++i) {
+        const double angle = two_pi * dist01(g_rng);
+        const double r     = free_coordinates.radius * std::sqrt(dist01(g_rng));
+
+        positions.emplace_back(
+            free_coordinates.center.x + static_cast<math::Scalar>(r * std::cos(angle)),
+            free_coordinates.center.y + static_cast<math::Scalar>(r * std::sin(angle)));
+    }
     return positions;
 }
 }  // namespace asteroid_factory

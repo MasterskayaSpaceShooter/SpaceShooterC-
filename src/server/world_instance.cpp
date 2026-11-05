@@ -50,8 +50,8 @@ WorldInstance::WorldInstance(boost::asio::io_context& io_context,
                              CreateToken,
                              math::Scalar world_width,
                              math::Scalar world_height) :
-    event_bus_(std::move(event_bus)), tick_strand_(boost::asio::make_strand(io_context)), tick_timer_(io_context),
-    tick_interval_{}, world_width_(world_width), world_height_(world_height) {
+    entities_{}, event_bus_(std::move(event_bus)), tick_strand_(boost::asio::make_strand(io_context)), tick_timer_(io_context),
+    tick_interval_{}, world_width_(world_width), world_height_(world_height), asteroid_factory_(entities_) {
     if (!event_bus_) {
         LOG_ERROR("[WorldInstance] event_bus is nullptr");
         throw std::invalid_argument("WorldInstance: event_bus must not be nullptr");
@@ -214,6 +214,7 @@ void WorldInstance::runTickStep() {
         updatePhysics(static_cast<float>(tick_interval_.count()) / 1'000'000.0f);
         resolveCollisions();
         maintainAsteroidPopulation();
+        asteroid_factory_.update(freePosition());
         // Спавн после физики: корабли новичков не участвуют в расчётах текущего тика.
         spawnShips(new_players);
 

@@ -20,6 +20,7 @@
 #include "network_events.h"
 #include "thread_safe_queue.h"
 #include "types.h"
+#include "asteroid_factory.h"
 
 enum class ActionType { Unknown, PlayerJoin, PlayerQuit, MoveAndShoot, Respawn };
 
@@ -383,4 +384,5 @@ private:
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
     boost::signals2::scoped_connection sub_player_join_;
+    asteroid_factory::AsteroidFactory asteroid_factory_;
 };
