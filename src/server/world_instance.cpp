@@ -532,6 +532,12 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
+    sub_shoot_ = event_bus_->subscribe<ShotMessageEvent>([weak_self](const ShotMessageEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onShotReceived(event);
+        }
+    });
+
     // далее другие подписки
 }
 
@@ -550,4 +556,13 @@ void WorldInstance::onPlayerJoin(const PlayerJoinEvent& event) {
     action.player_name = event.login;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] PlayerJoin: {} join to game from session {}", event.login, event.session_id);
+}
+
+void WorldInstance::onShotReceived(const ShotMessageEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::MoveAndShoot;
+    action.session_id = event.session_id;
+    action.is_shooting = true;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] MoveAndShoot for session {}", event.session_id);
 }

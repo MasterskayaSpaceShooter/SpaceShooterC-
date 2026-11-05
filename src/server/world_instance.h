@@ -369,6 +369,14 @@ private:
     // void onCollision(domain::Entity& proj, domain::Entity& ship);
     // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
+    /**
+     * @brief Колбек для подписки на событие ShotMessageEvent
+     * @details Создаёт ActionType::MoveAndShoot и кладёт в очередь
+     * @inputs Входные параметры: событие из шины ShotMessageEvent
+     * @outputs Выходных значений нет.
+     */
+    void onShotReceived(const ShotMessageEvent& event);
+
     std::atomic<std::uint64_t> current_tick_{0};    ///< Номер текущего тика
     ThreadSafeQueue<ActionEvent> action_queue_;     ///< Очередь действий игроков
     [[maybe_unused]] domain::EntityPool entities_;  ///< Пул сущностей мира
@@ -382,6 +390,7 @@ private:
     math::Scalar world_height_{world::kDefaultHeight};  ///< Высота мира
     std::atomic<State> state_{State::Stopped};  ///< Состояние жизненного цикла игрового цикла
     boost::signals2::scoped_connection sub_disconnect_;               ///< Подписка на ClientDisconnectedEvent
+    boost::signals2::scoped_connection sub_shoot_;                    ///< Подписка на выстрел
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
     boost::signals2::scoped_connection sub_player_join_;
     asteroid_factory::AsteroidFactory asteroid_factory_;
