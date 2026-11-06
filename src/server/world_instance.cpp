@@ -346,28 +346,39 @@ void WorldInstance::updatePhysics(math::Scalar dt) {
 
 void WorldInstance::resolveCollisions() {
     auto& storage = entities_.storage();
-    const std::size_t n = storage.size();
+    const auto entity_count = storage.size();
+    CollisionPairSet resolved_pairs;
 
-    for (std::size_t i = 0; i < n; ++i) {
-        auto& a_opt = storage[i];
-        if (!a_opt || a_opt->isDestroyed || !a_opt->transform)
+    for (std::size_t i = 0; i < entity_count; ++i) {
+        auto& entity1_slot = storage[i];
+        if (!entities_.isActive(entity1_slot) || entity1_slot->isDestroyed || !entity1_slot->transform ||
+            !std::isfinite(entity1_slot->transform->position.x) ||
+            !std::isfinite(entity1_slot->transform->position.y) || !std::isfinite(entity1_slot->radius) ||
+            entity1_slot->radius < 0.0) {
             continue;
+        }
 
-        for (std::size_t j = i + 1; j < n; ++j) {
-            if (a_opt->isDestroyed)  // сущность уничтожена в dispatchCollision — дальнейшие пары пропускаем
+        for (std::size_t j = i + 1; j < entity_count; ++j) {
+            if (entity1_slot->isDestroyed) {
                 break;
-            auto& b_opt = storage[j];
-            if (!b_opt || b_opt->isDestroyed || !b_opt->transform)
-                continue;
-            if (!mayCollide(a_opt->type, b_opt->type))
-                continue;
-            if (!math::collision::checkCircleCollision(a_opt->transform->position,
-                                                       a_opt->radius,
-                                                       b_opt->transform->position,
-                                                       b_opt->radius)) {
+            }
+
+            auto& entity2_slot = storage[j];
+            if (!entities_.isActive(entity2_slot) || entity2_slot->isDestroyed || !entity2_slot->transform ||
+                !std::isfinite(entity2_slot->transform->position.x) ||
+                !std::isfinite(entity2_slot->transform->position.y) || !std::isfinite(entity2_slot->radius) ||
+                entity2_slot->radius < 0.0 || !mayCollide(entity1_slot->type, entity2_slot->type) ||
+                !std::isfinite(entity1_slot->radius + entity2_slot->radius)) {
                 continue;
             }
-            dispatchCollision(*a_opt, *b_opt);
+
+            if (!math::collision::checkCircleCollision(entity1_slot->transform->position,
+                                                       entity1_slot->radius,
+                                                       entity2_slot->transform->position,
+                                                       entity2_slot->radius)) {
+                continue;
+            }
+            dispatchCollision(*entity1_slot, *entity2_slot, &resolved_pairs);
         }
     }
 
@@ -376,85 +387,43 @@ void WorldInstance::resolveCollisions() {
 
 bool WorldInstance::mayCollide(types::EntityType a, types::EntityType b) const noexcept {
     using T = types::EntityType;
-    if (a == T::None || b == T::None)
+    if (a == T::None || b == T::None) {
         return false;
-    if (a == T::Bullet && b == T::Bullet)
+    }
+    if ((a == T::Bullet && b == T::Bullet) || (a == T::Asteroid && b == T::Asteroid)) {
         return false;
-    if (a == T::Asteroid && b == T::Asteroid)
-        return false;
+    }
     return true;
 }
 
-void WorldInstance::dispatchCollision(domain::Entity& a, domain::Entity& b) {
+void WorldInstance::dispatchCollision(domain::Entity& a, domain::Entity& b, CollisionPairSet* resolved_pairs) {
+    if (resolved_pairs) {
+        const auto first_id = std::min(a.id, b.id);
+        const auto second_id = std::max(a.id, b.id);
+        if (!resolved_pairs->emplace(first_id, second_id).second) {
+            return;
+        }
+    }
+
     using T = types::EntityType;
     const T ta = a.type;
     const T tb = b.type;
 
-    if (ta == T::Ship && tb == T::Ship)
+    if (ta == T::Ship && tb == T::Ship) {
         onCollisionShipShip(a, b);
-    else if (ta == T::Ship && tb == T::Asteroid)
-        onCollisionShipAsteroid(a, b);
-    else if (ta == T::Asteroid && tb == T::Ship)
-        onCollisionShipAsteroid(b, a);
-    else if (ta == T::Bullet && tb == T::Ship)
+    } else if (ta == T::Ship && tb == T::Asteroid) {
+        onCollisionShipAsteroid(a, b, resolved_pairs);
+    } else if (ta == T::Asteroid && tb == T::Ship) {
+        onCollisionShipAsteroid(b, a, resolved_pairs);
+    } else if (ta == T::Bullet && tb == T::Ship) {
         onCollisionBulletShip(a, b);
-    else if (ta == T::Ship && tb == T::Bullet)
+    } else if (ta == T::Ship && tb == T::Bullet) {
         onCollisionBulletShip(b, a);
-    else if (ta == T::Bullet && tb == T::Asteroid)
+    } else if (ta == T::Bullet && tb == T::Asteroid) {
         onCollisionBulletAsteroid(a, b);
-    else if (ta == T::Asteroid && tb == T::Bullet)
+    } else if (ta == T::Asteroid && tb == T::Bullet) {
         onCollisionBulletAsteroid(b, a);
-}
-
-void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
-    // TODO: определить семантику столкновения пули с астероидом: пуля разрушается об астероид
-    // (proj.isDestroyed = true), астероид получает урон или делится на осколки. Пока коллизия
-    // игнорируется — пуля продолжает лететь сквозь астероид.
-    (void)proj;
-    (void)asteroid;
-}
-
-void WorldInstance::reapDestroyedShips() {
-    // Один проход по пулу: собираем id всех сущностей, помеченных isDestroyed.
-    std::unordered_set<types::EntityId, types::EntityHash> destroyed_ids;
-    for (const auto& opt : entities_.storage()) {
-        if (opt && opt->isDestroyed) {
-            destroyed_ids.insert(opt->id);
-        }
     }
-
-    // Publish one ShipDestroyedEvent per session whose ship died this tick,
-    // then drop the mapping, then recycle the pool.
-    // PlayerQuit path already removed its mapping in processInputQueue(),
-    // so those ships are not revisited here (idempotent).
-    for (auto it = session_to_ship_.begin(); it != session_to_ship_.end();) {
-        if (destroyed_ids.contains(it->second)) {
-            LOG_INFO("[WorldInstance] ship destroyed: session={}, entity={}", it->first, it->second.get());
-            event_bus_->publish(ShipDestroyedEvent{it->first});
-            it = session_to_ship_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Инцидент: уничтоженный корабль без привязки к сессии — событие не публикуем, только лог.
-    for (const auto& opt : entities_.storage()) {
-        if (!opt || !opt->isDestroyed || opt->type != types::EntityType::Ship)
-            continue;
-
-        bool has_session = false;
-        for (const auto& [sid, eid] : session_to_ship_) {
-            if (eid == opt->id) {
-                has_session = true;
-                break;
-            }
-        }
-        if (!has_session) {
-            LOG_WARN("[WorldInstance] ship {} destroyed without session binding", opt->id.get());
-        }
-    }
-
-    entities_.recycleDestroyed();
 }
 
 void WorldInstance::onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2) {
@@ -475,10 +444,16 @@ WorldInstance::GrowStatus WorldInstance::tryGrowShip(math::Vector2D& position, m
     return GrowStatus::CanGrow;
 }
 
-void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid) {
+void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship,
+                                            domain::Entity& asteroid,
+                                            CollisionPairSet* resolved_pairs) {
     auto grow_status = GrowStatus::CanGrow;
-    const auto can_grow = [this, &grow_status](math::Vector2D& position, math::Scalar radius) noexcept -> bool {
+    const auto can_grow = [this, &ship, &asteroid, &grow_status, resolved_pairs](math::Vector2D& position,
+                                                                                 math::Scalar radius) noexcept -> bool {
         grow_status = tryGrowShip(position, radius);
+        if (grow_status == GrowStatus::CanGrow) {
+            checkForIntersections(ship, asteroid, position, radius, resolved_pairs);
+        }
         return grow_status == GrowStatus::CanGrow;
     };
     domain::collision::onCollisionShipAsteroid(ship, asteroid, can_grow);
@@ -513,6 +488,74 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
 
         LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
     });
+}
+
+void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
+    constexpr std::uint16_t kBulletDamage = 25;
+    if (proj.type != types::EntityType::Bullet || asteroid.type != types::EntityType::Asteroid || !proj.isValid() ||
+        !asteroid.isValid() || !asteroid.isDamageable()) {
+        return;
+    }
+
+    domain::applyDamage(*asteroid.health, kBulletDamage);
+    proj.isDestroyed = true;
+    if (!domain::isAlive(*asteroid.health)) {
+        asteroid.isDestroyed = true;
+    }
+}
+
+void WorldInstance::reapDestroyedShips() {
+    for (auto it = session_to_ship_.begin(); it != session_to_ship_.end();) {
+        const types::EntityId entity_id = it->second;
+        const auto* entity = entities_.findByEntityID(entity_id);
+        if (entity && entity->isDestroyed) {
+            const SessionId session_id = it->first;
+            LOG_INFO("[WorldInstance] ship destroyed: session={}, entity={}", session_id, entity_id.get());
+            event_bus_->publish(ShipDestroyedEvent{session_id});
+            it = session_to_ship_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    entities_.recycleDestroyed();
+}
+
+void WorldInstance::checkForIntersections(domain::Entity& ship,
+                                          const domain::Entity& consumed_asteroid,
+                                          const math::Vector2D& candidate_position,
+                                          math::Scalar candidate_radius,
+                                          CollisionPairSet* resolved_pairs) noexcept {
+    if (!ship.isValid() || !ship.isDamageable() || !std::isfinite(candidate_position.x) ||
+        !std::isfinite(candidate_position.y) || !std::isfinite(candidate_radius) || candidate_radius < 0.0) {
+        return;
+    }
+
+    for (auto& slot : entities_.storage()) {
+        if (!entities_.isActive(slot) || !slot->transform || !std::isfinite(slot->transform->position.x) ||
+            !std::isfinite(slot->transform->position.y) || !std::isfinite(slot->radius) || slot->radius < 0.0) {
+            continue;
+        }
+
+        auto& other = *slot;
+        if (other.id == ship.id || other.id == consumed_asteroid.id) {
+            continue;
+        }
+
+        const auto delta = candidate_position - other.transform->position;
+        const auto radius_sum = candidate_radius + other.radius;
+        if (delta.lengthSquared() > radius_sum * radius_sum) {
+            continue;
+        }
+
+        if ((other.type == types::EntityType::Ship && other.isDamageable()) ||
+            (other.type == types::EntityType::Bullet && other.combat && other.combat->owner_id != ship.id)) {
+            dispatchCollision(ship, other, resolved_pairs);
+        }
+
+        if (!ship.isDamageable()) {
+            break;
+        }
+    }
 }
 
 void WorldInstance::maintainAsteroidPopulation() {

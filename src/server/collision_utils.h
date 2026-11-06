@@ -14,9 +14,42 @@ namespace domain::collision {
 
 namespace detail {
 
-inline void applyPercentageDamage(Entity&, std::uint16_t) noexcept {}
+// Наносит сущности урон в процентах от её максимального здоровья.
+// Помечает сущность уничтоженной, если после урона здоровье достигло нуля.
+inline void applyPercentageDamage(Entity& entity, std::uint16_t percentage) noexcept {
+    if (!entity.health) {
+        return;
+    }
 
-inline void repelAsteroid(Entity&, Entity&) {}
+    const auto damage = static_cast<std::uint16_t>((static_cast<std::uint32_t>(entity.health->max) * percentage) / 100);
+    applyDamage(*entity.health, damage);
+    if (!isAlive(*entity.health)) {
+        entity.isDestroyed = true;
+    }
+}
+
+// Рассчитывает упругий импульс при столкновении корабля с астероидом.
+// При совпадении позиций использует направление корабля как нормаль столкновения.
+inline void repelAsteroid(Entity& ship, Entity& asteroid) noexcept {
+    if (!ship.transform || !asteroid.transform || !std::isfinite(ship.mass) || !std::isfinite(asteroid.mass) ||
+        ship.mass <= 0.0 || asteroid.mass <= 0.0) {
+        return;
+    }
+
+    auto asteroid_position = asteroid.transform->position;
+    const auto separation = asteroid_position - ship.transform->position;
+    if (separation.lengthSquared() < math::kEps) {
+        const auto angle = std::isfinite(ship.transform->angle) ? ship.transform->angle : 0.0;
+        asteroid_position = ship.transform->position + math::Vector2D{std::cos(angle), std::sin(angle)};
+    }
+
+    math::collision::resolveElasticImpulse(ship.transform->position,
+                                           ship.transform->velocity,
+                                           ship.mass,
+                                           asteroid_position,
+                                           asteroid.transform->velocity,
+                                           asteroid.mass);
+}
 
 }  // namespace detail
 

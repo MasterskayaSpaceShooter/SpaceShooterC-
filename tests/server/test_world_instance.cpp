@@ -13,6 +13,22 @@
 /// Вспомогательный класс для доступа к приватным полям WI в тестах.
 class WorldInstanceTestAccessor {
 public:
+    static domain::Entity& acquireEntity(WorldInstance& world) {
+        return *world.entities_.acquire();
+    }
+
+    static void collideShipAsteroid(WorldInstance& world, domain::Entity& ship, domain::Entity& asteroid) {
+        world.onCollisionShipAsteroid(ship, asteroid);
+    }
+
+    static void resolveCollisions(WorldInstance& world) {
+        world.resolveCollisions();
+    }
+
+    static bool hasEntity(const WorldInstance& world, types::EntityId id) {
+        return world.entities_.findByEntityID(id) != nullptr;
+    }
+
     // Возвращает накопленные действия из action_queue_
     static std::vector<ActionEvent> drainActions(WorldInstance& world) {
         return world.action_queue_.drain();
@@ -84,6 +100,295 @@ public:
         return nullptr;
     }
 };
+
+TEST(WorldInstance, ResolveCollisionsDispatchesShipShipCollision) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create());
+
+    auto& ship1 = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship1.type = types::EntityType::Ship;
+    ship1.mass = 100.0;
+    ship1.radius = 5.0;
+    ship1.transform = domain::TransformComponent{};
+    ship1.health = domain::HealthComponent{100, 100};
+    ship1.ship = domain::ShipComponent{};
+
+    auto& ship2 = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship2.type = types::EntityType::Ship;
+    ship2.mass = 100.0;
+    ship2.radius = 5.0;
+    ship2.transform = domain::TransformComponent{{5.0, 0.0}, {}, 0.0};
+    ship2.health = domain::HealthComponent{100, 100};
+    ship2.ship = domain::ShipComponent{};
+
+    WorldInstanceTestAccessor::resolveCollisions(*world);
+
+    EXPECT_EQ(ship1.health->current, 93);
+    EXPECT_EQ(ship2.health->current, 93);
+}
+
+TEST(WorldInstance, ResolveCollisionsDispatchesShipAsteroidCollision) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create());
+
+    auto& ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship.type = types::EntityType::Ship;
+    ship.mass = 300.0;
+    ship.radius = 5.0;
+    ship.transform = domain::TransformComponent{};
+    ship.health = domain::HealthComponent{100, 100};
+    ship.ship = domain::ShipComponent{};
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+    const auto asteroid_id = asteroid.id;
+
+    WorldInstanceTestAccessor::resolveCollisions(*world);
+
+    EXPECT_DOUBLE_EQ(ship.mass, 400.0);
+    EXPECT_FALSE(WorldInstanceTestAccessor::hasEntity(*world, asteroid_id));
+}
+
+TEST(WorldInstance, ShipPairOverlappingAfterGrowthIsResolvedOnlyOncePerTick) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create());
+
+    auto& growing_ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    growing_ship.type = types::EntityType::Ship;
+    growing_ship.mass = 300.0;
+    growing_ship.radius = 5.0;
+    growing_ship.transform = domain::TransformComponent{};
+    growing_ship.health = domain::HealthComponent{100, 100};
+    growing_ship.ship = domain::ShipComponent{};
+    growing_ship.ship->score = 20;
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    auto& neighbor = WorldInstanceTestAccessor::acquireEntity(*world);
+    neighbor.type = types::EntityType::Ship;
+    neighbor.mass = 300.0;
+    neighbor.radius = 5.0;
+    neighbor.transform = domain::TransformComponent{{14.0, 0.0}, {}, 0.0};
+    neighbor.health = domain::HealthComponent{100, 100};
+    neighbor.ship = domain::ShipComponent{};
+    neighbor.ship->score = 20;
+
+    WorldInstanceTestAccessor::resolveCollisions(*world);
+
+    EXPECT_DOUBLE_EQ(growing_ship.radius, 10.0);
+    EXPECT_EQ(growing_ship.health->current, 95);
+    EXPECT_EQ(neighbor.health->current, 90);
+    EXPECT_EQ(growing_ship.ship->score, 15u);
+    EXPECT_EQ(neighbor.ship->score, 15u);
+}
+
+TEST(WorldInstance, ResolveCollisionsDispatchesBulletShipCollisionAndRecyclesBullet) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create());
+
+    auto& owner = WorldInstanceTestAccessor::acquireEntity(*world);
+    owner.type = types::EntityType::Ship;
+    owner.mass = 100.0;
+    owner.radius = 5.0;
+    owner.transform = domain::TransformComponent{{-100.0, 0.0}, {}, 0.0};
+    owner.health = domain::HealthComponent{100, 100};
+    owner.ship = domain::ShipComponent{};
+
+    auto& target = WorldInstanceTestAccessor::acquireEntity(*world);
+    target.type = types::EntityType::Ship;
+    target.mass = 100.0;
+    target.radius = 5.0;
+    target.transform = domain::TransformComponent{};
+    target.health = domain::HealthComponent{100, 100};
+    target.ship = domain::ShipComponent{};
+
+    auto& bullet = WorldInstanceTestAccessor::acquireEntity(*world);
+    bullet.type = types::EntityType::Bullet;
+    bullet.radius = 2.0;
+    bullet.transform = domain::TransformComponent{};
+    bullet.combat = domain::CombatComponent{12, owner.id};
+    const auto bullet_id = bullet.id;
+
+    WorldInstanceTestAccessor::resolveCollisions(*world);
+
+    EXPECT_EQ(target.health->current, 75);
+    EXPECT_EQ(owner.ship->score, 5u);
+    EXPECT_FALSE(WorldInstanceTestAccessor::hasEntity(*world, bullet_id));
+}
+
+TEST(WorldInstance, ResolveCollisionsAppliesFixedDamageToAsteroidAndRecyclesBullet) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create());
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 5.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{50, 50};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    auto& bullet = WorldInstanceTestAccessor::acquireEntity(*world);
+    bullet.type = types::EntityType::Bullet;
+    bullet.radius = 2.0;
+    bullet.transform = domain::TransformComponent{};
+    bullet.combat = domain::CombatComponent{100, types::EntityId{999}};
+    const auto bullet_id = bullet.id;
+
+    WorldInstanceTestAccessor::resolveCollisions(*world);
+
+    EXPECT_EQ(asteroid.health->current, 25);
+    EXPECT_FALSE(asteroid.isDestroyed);
+    EXPECT_FALSE(WorldInstanceTestAccessor::hasEntity(*world, bullet_id));
+}
+
+TEST(WorldInstance, GrowingShipResolvesCollisionWithNearbyShip) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
+
+    auto& ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship.type = types::EntityType::Ship;
+    ship.mass = 300.0;
+    ship.radius = 5.0;
+    ship.transform = domain::TransformComponent{};
+    ship.health = domain::HealthComponent{100, 100};
+    ship.ship = domain::ShipComponent{};
+
+    auto& neighbor = WorldInstanceTestAccessor::acquireEntity(*world);
+    neighbor.type = types::EntityType::Ship;
+    neighbor.mass = 200.0;
+    neighbor.radius = 5.0;
+    neighbor.transform = domain::TransformComponent{{14.0, 0.0}, {}, 0.0};
+    neighbor.health = domain::HealthComponent{100, 100};
+    neighbor.ship = domain::ShipComponent{};
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    WorldInstanceTestAccessor::collideShipAsteroid(*world, ship, asteroid);
+
+    EXPECT_EQ(ship.radius, 10.0);
+    EXPECT_EQ(ship.health->current, 95);
+    EXPECT_EQ(neighbor.health->current, 90);
+    EXPECT_TRUE(asteroid.isDestroyed);
+}
+
+TEST(WorldInstance, EachGrowthStepResolvesTheShipCollisionAgain) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
+
+    auto& ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship.type = types::EntityType::Ship;
+    ship.mass = 2000.0;
+    ship.radius = 5.0;
+    ship.transform = domain::TransformComponent{};
+    ship.health = domain::HealthComponent{100, 100};
+    ship.ship = domain::ShipComponent{};
+
+    auto& neighbor = WorldInstanceTestAccessor::acquireEntity(*world);
+    neighbor.type = types::EntityType::Ship;
+    neighbor.mass = 1000.0;
+    neighbor.radius = 5.0;
+    neighbor.transform = domain::TransformComponent{{15.0, 0.0}, {}, 0.0};
+    neighbor.health = domain::HealthComponent{100, 100};
+    neighbor.ship = domain::ShipComponent{};
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 900.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    WorldInstanceTestAccessor::collideShipAsteroid(*world, ship, asteroid);
+
+    EXPECT_EQ(ship.radius, 20.0);
+    EXPECT_EQ(ship.health->current, 90);
+    EXPECT_EQ(neighbor.health->current, 80);
+}
+
+TEST(WorldInstance, ShipGrowingIntoEnemyBulletTakesDamageAndDestroysBullet) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
+
+    auto& ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship.type = types::EntityType::Ship;
+    ship.mass = 300.0;
+    ship.radius = 5.0;
+    ship.transform = domain::TransformComponent{};
+    ship.health = domain::HealthComponent{100, 100};
+    ship.ship = domain::ShipComponent{};
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    auto& bullet = WorldInstanceTestAccessor::acquireEntity(*world);
+    bullet.type = types::EntityType::Bullet;
+    bullet.radius = 2.0;
+    bullet.transform = domain::TransformComponent{{11.0, 0.0}, {}, 0.0};
+    bullet.combat = domain::CombatComponent{12, types::EntityId{999}};
+
+    WorldInstanceTestAccessor::collideShipAsteroid(*world, ship, asteroid);
+
+    EXPECT_EQ(ship.radius, 10.0);
+    EXPECT_EQ(ship.health->current, 75);
+    EXPECT_TRUE(bullet.isDestroyed);
+    EXPECT_TRUE(asteroid.isDestroyed);
+}
+
+TEST(WorldInstance, GrowingShipIgnoresItsOwnBullet) {
+    boost::asio::io_context io_context;
+    auto world = WorldInstance::create(io_context, events::EventBus::create(), 60.0, 1000.0, 1000.0);
+
+    auto& ship = WorldInstanceTestAccessor::acquireEntity(*world);
+    ship.type = types::EntityType::Ship;
+    ship.mass = 300.0;
+    ship.radius = 5.0;
+    ship.transform = domain::TransformComponent{};
+    ship.health = domain::HealthComponent{100, 100};
+    ship.ship = domain::ShipComponent{};
+
+    auto& asteroid = WorldInstanceTestAccessor::acquireEntity(*world);
+    asteroid.type = types::EntityType::Asteroid;
+    asteroid.mass = 100.0;
+    asteroid.radius = 2.0;
+    asteroid.transform = domain::TransformComponent{};
+    asteroid.health = domain::HealthComponent{100, 100};
+    asteroid.asteroid = domain::AsteroidComponent{};
+
+    auto& bullet = WorldInstanceTestAccessor::acquireEntity(*world);
+    bullet.type = types::EntityType::Bullet;
+    bullet.radius = 2.0;
+    bullet.transform = domain::TransformComponent{{11.0, 0.0}, {}, 0.0};
+    bullet.combat = domain::CombatComponent{12, ship.id};
+
+    WorldInstanceTestAccessor::collideShipAsteroid(*world, ship, asteroid);
+
+    EXPECT_EQ(ship.health->current, 100);
+    EXPECT_FALSE(bullet.isDestroyed);
+}
 
 TEST(WorldInstance, CreateWithNullEventBusThrows) {
     boost::asio::io_context io_context;
