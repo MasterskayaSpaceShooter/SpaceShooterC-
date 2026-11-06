@@ -23,18 +23,17 @@ struct AsteroidData {
 
 class AsteroidFactory {
 public:
-    AsteroidFactory(std::shared_ptr<domain::EntityPool> entity_pool);
-    void update(const std::vector<math::Vector2D>& free_coordinates);
+    AsteroidFactory(domain::EntityPool& entity_pool);
+    void update(const math::Circle& free_coordinates);
     std::vector<AsteroidData> createSplitAsteroid(const AsteroidData& parent);
     std::vector<double> generateAsteroidWeight(const double current_weight);
-    std::vector<math::Vector2D> generatePositions(const size_t pos_count,
-                                                  const std::vector<math::Vector2D>& free_coordinates);
+    std::vector<math::Vector2D> generatePositions(const size_t pos_count, const math::Circle& free_coordinates);
 
 private:
     double calculateCurrentWeight() const;
 
 private:
-    std::shared_ptr<domain::EntityPool> entity_pool_;
+    domain::EntityPool& entity_pool_;
 };
 
 }  // namespace asteroid_factory

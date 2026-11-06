@@ -50,8 +50,9 @@ WorldInstance::WorldInstance(boost::asio::io_context& io_context,
                              CreateToken,
                              math::Scalar world_width,
                              math::Scalar world_height) :
-    event_bus_(std::move(event_bus)), tick_strand_(boost::asio::make_strand(io_context)), tick_timer_(io_context),
-    tick_interval_{}, world_width_(world_width), world_height_(world_height) {
+    entities_{}, event_bus_(std::move(event_bus)), tick_strand_(boost::asio::make_strand(io_context)),
+    tick_timer_(io_context), tick_interval_{}, world_width_(world_width), world_height_(world_height),
+    asteroid_factory_(entities_) {
     if (!event_bus_) {
         LOG_ERROR("[WorldInstance] event_bus is nullptr");
         throw std::invalid_argument("WorldInstance: event_bus must not be nullptr");
@@ -294,11 +295,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            entity->isDestroyed = true;
-                            break;
-                        }
+                    if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
+                        ship->isDestroyed = true;
                     }
                     session_to_ship_.erase(action.session_id);
                 }
@@ -310,34 +308,27 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                 auto it = session_to_ship_.find(action.session_id);
                 if (it != session_to_ship_.end()) {
                     auto ship_id = it->second;
-                    domain::Entity* ship = nullptr;
 
-                    for (auto& entity : entities_.storage()) {
-                        if (entity.has_value() && entity->id == ship_id) {
-                            if (entity->transform.has_value()) {
-                                if (action.move_direction.lengthSquared() > 0) {
-                                    entity->transform->velocity = action.move_direction;
-                                }
-                                ship = &(*entity);
-                                break;
-                            }
+                    if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
+                        if (action.move_direction.lengthSquared() > 0) {
+                            ship->transform->velocity = action.move_direction;
                         }
-                    }
 
-                    if (ship && action.is_shooting) {
-                        auto bullet = entities_.acquire();
-                        bullet->type = types::EntityType::Bullet;
-                        bullet->radius = world::kBulletRadius;
-                        bullet->transform = domain::TransformComponent{};
-                        bullet->combat = domain::CombatComponent{};
+                        if (action.is_shooting) {
+                            auto bullet = entities_.acquire();
+                            bullet->type = types::EntityType::Bullet;
+                            bullet->radius = world::kBulletRadius;
+                            bullet->transform = domain::TransformComponent{};
+                            bullet->combat = domain::CombatComponent{};
 
-                        auto angle = ship->transform->angle;
-                        math::Vector2D direction{std::cos(angle), std::sin(angle)};
-                        bullet->transform->position = ship->transform->position + (direction * ship->radius);
-                        bullet->transform->velocity = direction * world::kBulletSpeed;
+                            auto angle = ship->transform->angle;
+                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                            bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                            bullet->transform->velocity = direction * world::kBulletSpeed;
 
-                        bullet->combat->owner_id = ship_id;
-                        bullet->combat->damage = world::kBulletDamage;
+                            bullet->combat->owner_id = ship_id;
+                            bullet->combat->damage = world::kBulletDamage;
+                        }
                     }
                 }
                 break;
@@ -416,7 +407,7 @@ void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& 
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
-    // TODO: поддерживать количество астероидов на карте через asteroid_factory_.
+    asteroid_factory_.update(freePosition());
 }
 
 void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
@@ -541,6 +532,12 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
+    sub_shoot_ = event_bus_->subscribe<ShotMessageEvent>([weak_self](const ShotMessageEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onShotReceived(event);
+        }
+    });
+
     // далее другие подписки
 }
 
@@ -559,4 +556,13 @@ void WorldInstance::onPlayerJoin(const PlayerJoinEvent& event) {
     action.player_name = event.login;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] PlayerJoin: {} join to game from session {}", event.login, event.session_id);
+}
+
+void WorldInstance::onShotReceived(const ShotMessageEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::MoveAndShoot;
+    action.session_id = event.session_id;
+    action.is_shooting = true;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] MoveAndShoot for session {}", event.session_id);
 }

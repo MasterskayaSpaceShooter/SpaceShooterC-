@@ -1,6 +1,5 @@
 #include <iostream>
 
-#include "asteroid_factory.h"
 #include "event_bus.h"
 #include "frame_codec.h"
 #include "logger.h"
@@ -16,9 +15,6 @@ int main() {
         network::FrameCodec frame_codec;
         auto router = NetworkResponseRouter::create(event_bus);
         auto server = std::make_shared<TcpServer>(nc.getContext(), 8080, event_bus, frame_codec);
-        std::shared_ptr<domain::EntityPool> entity_pool = std::make_shared<domain::EntityPool>();
-        asteroid_factory::AsteroidFactory af(entity_pool);
-
         auto world = WorldInstance::create(nc.getContext(), event_bus);
         nc.start();
         server->start();

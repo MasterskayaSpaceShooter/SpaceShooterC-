@@ -10,6 +10,7 @@ add_executable(unit_tests_server
     	test_ship_asteroid_collision.cpp
 	test_ship_ship_collision.cpp
 	test_bullet_ship_collision.cpp
+    test_entity_pool.cpp
 )
 
 target_link_libraries(unit_tests_server PRIVATE server common GTest::gmock GTest::gtest_main)
