@@ -1,236 +1,205 @@
 #include "game_controller.h"
 
-#include <boost/asio/post.hpp>
+#include <algorithm>
+#include <chrono>
+#include <format>
 #include <stdexcept>
 #include <string_view>
-
-#include "logger.h"
-#include "protocol.h"
+#include <thread>
+#include <utility>
 
 namespace client {
 
-std::shared_ptr<GameController> GameController::create(TcpClientPtr tcp, boost::asio::io_context& io) {
-    if (!tcp) {
-        throw std::invalid_argument("GameController::create: tcp must not be null");
+namespace {
+constexpr double kShootCooldownDuration = 0.25;
+}  // namespace
+
+GameController::GameController(sf::RenderWindow& window,
+                               std::shared_ptr<TcpClient> tcp,
+                               std::shared_ptr<IRenderer> renderer,
+                               std::shared_ptr<IInputProvider> input_provider,
+                               std::string player_name)
+    : window_(window),
+      tcp_(std::move(tcp)),
+      renderer_(std::move(renderer)),
+      input_provider_(std::move(input_provider)),
+      player_name_(std::move(player_name)) {
+    if (!tcp_) {
+        LOG_ERROR("[GameController] tcp client pointer is nullptr");
+        throw std::invalid_argument("GameController: tcp must not be nullptr");
     }
-
-    struct MakeSharedEnabler final : GameController {
-        MakeSharedEnabler(TcpClientPtr t, boost::asio::io_context& i) : GameController(std::move(t), i) {}
-    };
-
-    std::shared_ptr<GameController> self = std::make_shared<MakeSharedEnabler>(std::move(tcp), io);
-    self->wireCallbacks();
-    LOG_INFO("GameController created");
-    return self;
-}
-
-void GameController::start(std::string host, std::uint16_t port, std::string playerName) {
-    if (!validatePlayerName(playerName)) {
-        return;
+    if (!renderer_) {
+        LOG_ERROR("[GameController] renderer pointer is nullptr");
+        throw std::invalid_argument("GameController: renderer must not be nullptr");
     }
-    LOG_INFO("start() requested: host='{}' port={} player='{}'", host, port, playerName);
-    boost::asio::post(
-        strand_,
-        [self = shared_from_this(), host = std::move(host), port, playerName = std::move(playerName)]() mutable {
-            self->doStart(std::move(host), port, std::move(playerName));
-        });
-}
-
-void GameController::shutdown() {
-    LOG_INFO("shutdown() requested (current state: {})", convertStateToString(state_.load()));
-    boost::asio::post(strand_, [self = shared_from_this()] {
-        self->doShutdown();
-    });
-}
-
-void GameController::rejoin(std::string host, std::uint16_t port, std::string playerName) {
-    if (!validatePlayerName(playerName)) {
-        return;
+    if (!input_provider_) {
+        LOG_ERROR("[GameController] input_provider pointer is nullptr");
+        throw std::invalid_argument("GameController: input_provider must not be nullptr");
     }
-    LOG_INFO("rejoin() requested: host='{}' port={} player='{}'", host, port, playerName);
-    boost::asio::post(
-        strand_,
-        [self = shared_from_this(), host = std::move(host), port, playerName = std::move(playerName)]() mutable {
-            // doShutdown() is unconditional; it tears down the current
-            // socket (if any) and transitions to Disconnected, so doStart()
-            // is guaranteed to pass its own guard below.
-            self->doShutdown();
-            self->doStart(std::move(host), port, std::move(playerName));
-        });
 }
 
-ClientState GameController::state() const noexcept {
-    return state_.load();
+void GameController::setState(ClientState new_state) noexcept {
+    if (state_ != new_state) {
+        LOG_INFO("[GameController] State changed: {} -> {}",
+                 static_cast<int>(state_),
+                 static_cast<int>(new_state));
+        state_ = new_state;
+    }
 }
 
-void GameController::wireCallbacks() {
-    auto weak = weak_from_this();
+void GameController::sendString(std::string_view str) {
+    std::vector<uint8_t> data(str.begin(), str.end());
+    tcp_->send(std::move(data));
+}
 
-    tcp_->setMessageCallback([weak](std::vector<std::uint8_t> payload) {
-        if (auto self = weak.lock())
-            boost::asio::post(self->strand_, [self, payload = std::move(payload)] {
-                self->onMessageOnStrand(payload);
-            });
+void GameController::run() {
+    LOG_INFO("[GameController] Initializing network callbacks for player '{}'", player_name_);
+
+    tcp_->setMessageCallback([this](const std::vector<uint8_t>& data) {
+        handleIncomingBytes(data);
     });
 
-    tcp_->setDisconnectCallback([weak] {
-        if (auto self = weak.lock())
-            boost::asio::post(self->strand_, [self] {
-                const auto s = self->state_.load();
-                // Stale event from a superseded connection (e.g. the disconnect
-                // posted by rejoin()'s doShutdown() firing after doStart()
-                // already started a new connect), or a redundant event while
-                // already torn down. Drop.
-                if (s == ClientState::Disconnected || s == ClientState::Connecting) {
-                    LOG_INFO("Ignoring disconnect event (state={})", convertStateToString(s));
-                    return;
-                }
-                LOG_INFO("TcpClient reported disconnect");
-                self->setState(ClientState::Disconnected);
-            });
-    });
-}
-
-void GameController::doStart(const std::string& host, std::uint16_t port, std::string playerName) {
-    if (state_.load() != ClientState::Disconnected) {
-        LOG_WARN("doStart() ignored: state={} (expected Disconnected)", convertStateToString(state_.load()));
-        return;
-    }
-
-    playerName_ = std::move(playerName);
-    setState(ClientState::Connecting);
-    LOG_INFO("Connecting to {}:{} as '{}'", host, port, playerName_);
-
-    const std::uint64_t gen = ++connectGen_;
-    auto weak = weak_from_this();
-    tcp_->connect(host, port, [weak, gen](bool ok) {
-        if (auto self = weak.lock())
-            boost::asio::post(self->strand_, [self, ok, gen] {
-                // Generation check first: a callback belonging to a superseded
-                // connect (rejoin / shutdown+start) must be ignored even if
-                // state_ happens to read Connecting again.
-                if (self->connectGen_ != gen) {
-                    LOG_INFO("Ignoring stale connect callback (gen {} vs current {})", gen, self->connectGen_);
-                    return;
-                }
-                if (self->state_.load() != ClientState::Connecting) {
-                    LOG_WARN("Connect callback arrived but state={} (expected Connecting)",
-                             convertStateToString(self->state_.load()));
-                    return;
-                }
-
-                if (!ok) {
-                    LOG_WARN("TCP connect failed");
-                    self->setState(ClientState::Disconnected);
-                    return;
-                }
-                LOG_INFO("TCP connection established");
-                self->setState(ClientState::Connected);
-                self->sendJoin();
-            });
-    });
-}
-
-void GameController::doShutdown() {
-    LOG_INFO("Shutting down transport (state: {})", convertStateToString(state_.load()));
-    ++connectGen_;  // invalidate any in-flight connect callback
-    tcp_->disconnect();
-    setState(ClientState::Disconnected);
-    // Callbacks stay wired; the Disconnected guard in onMessageOnStrand()
-    // drops late messages, so rejoin()/start() reuse the same wiring.
-}
-
-void GameController::sendJoin() {
-    LOG_INFO("Sending JOIN as '{}'", playerName_);
-    tcp_->send(protocol::encode(protocol::JoinMsg{playerName_}));
+    LOG_INFO("[GameController] Sending JOIN command for player '{}'", player_name_);
+    sendString(std::format("JOIN {}\n", player_name_));
     setState(ClientState::Joining);
-}
 
-void GameController::onMessageOnStrand(const std::vector<std::uint8_t>& payload) {
-    if (state_.load() == ClientState::Disconnected) {
-        LOG_WARN("Dropping server message while Disconnected ({} bytes)", payload.size());
-        return;
-    }
+    using Clock = std::chrono::steady_clock;
+    auto last_time = Clock::now();
 
-    const protocol::ServerMsg msg = protocol::decode(payload);
-
-    switch (msg.type) {
-        case protocol::ServerMsgType::Accept:
-            LOG_INFO("ACCEPT (argument='{}')", msg.argument);
-            setState(ClientState::InGame);
-            break;
-
-        case protocol::ServerMsgType::Reject:
-            LOG_WARN("REJECT (argument='{}')", msg.argument);
-            // Server refused this session; treat as terminal for the
-            // current attempt. App may still rejoin() later.
-            doShutdown();
-            break;
-
-        case protocol::ServerMsgType::GameEnd:
-            LOG_INFO("GAME_END (argument='{}')", msg.argument);
-            // Design A: match over for this client. Socket is left open —
-            // the server may send a final score, or close it. Either way
-            // the app drives rejoin() from its own countdown.
-            setState(ClientState::GameOver);
-            break;
-
-        case protocol::ServerMsgType::Unknown: {
-            if (payload.empty()) {
-                LOG_WARN("Empty server message");
-            } else {
-                const std::string_view raw(reinterpret_cast<const char*>(payload.data()), payload.size());
-                LOG_WARN("Unknown server message ({} bytes): '{}'", payload.size(), raw);
+    while (window_.isOpen() && state_ != ClientState::Disconnected) {
+        // Обязательная откачка сообщений окна ОС для предотвращения зависания
+        sf::Event event;
+        while (window_.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window_.close();
+                setState(ClientState::Disconnected);
+                break;
             }
-            break;
+        }
+
+        auto now = Clock::now();
+        double dt = std::chrono::duration<double>(now - last_time).count();
+        last_time = now;
+
+        update(dt);
+        render();
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+
+    LOG_INFO("[GameController] Main game loop finished, client stopped");
+}
+
+void GameController::update(double dt) {
+    if (state_ == ClientState::Connecting || state_ == ClientState::Disconnected) {
+        return;
+    }
+
+    math::Vector2D my_pos(0.0, 0.0);
+
+    {
+        std::lock_guard lock(world_mutex_);
+        const snapshot::EntitySnapshot* my_ship = nullptr;
+        for (const auto& [id, entity] : world_.getEntities()) {
+            if (id == my_player_id_) {
+                my_ship = &entity;
+                break;
+            }
+        }
+
+        // Проверяем смерть корабля только после того, как получили хотя бы один снапшот мира
+        if (state_ == ClientState::InGame && has_received_first_snapshot_) {
+            if (!my_ship || my_ship->is_destroyed) {
+                LOG_INFO("[GameController] Player ship destroyed, entering GameOver state");
+                setState(ClientState::GameOver);
+            }
+        }
+
+        if (my_ship && my_ship->transform.has_value()) {
+            my_pos = my_ship->transform->position;
         }
     }
-}
 
-void GameController::setState(ClientState next) noexcept {
-    const auto current = state_.load();
-    if (current == next)
-        return;
-    state_.store(next);
-    LOG_INFO("GameController state: {} -> {}", convertStateToString(current), convertStateToString(next));
-}
+    auto input = input_provider_->pollInput(my_pos);
 
-bool GameController::validatePlayerName(const std::string& name) {
-    if (name.empty()) {
-        LOG_ERROR("playerName must not be empty");
-        return false;
-    }
-    for (unsigned char c : name) {
-        if (c <= 0x20 || c == 0x7f) {
-            LOG_ERROR("playerName must not contain whitespace or control characters");
-            return false;
+    if (state_ == ClientState::GameOver) {
+        if (input.request_respawn) {
+            LOG_INFO("[GameController] Player requested RESPAWN, sending command to server");
+            sendString("RESPAWN\n");
+            has_received_first_snapshot_ = false;
+            setState(ClientState::Joining);
         }
+        return;
     }
-    return true;
+
+    if (state_ != ClientState::InGame) {
+        return;
+    }
+
+    if (input.move_direction.lengthSquared() > 0.0) {
+            LOG_INFO("[GameController] Sending MOVE angle={}", input.target_angle);
+            sendString(std::format("MOVE {:.4f}\n", input.target_angle));
+        }
+
+        shoot_cooldown_ = std::max(0.0, shoot_cooldown_ - dt);
+        if (input.is_shooting && shoot_cooldown_ <= 0.0) {
+            shoot_cooldown_ = kShootCooldownDuration;
+            LOG_INFO("[GameController] Sending SHOOT");
+            sendString("SHOOT\n");
+        }
 }
 
-void GameController::shoot() {
-    boost::asio::post(strand_, [self = shared_from_this()] {
-        self->doShoot();
-    });
+void GameController::render() {
+    if (state_ == ClientState::Joining) {
+        renderer_->renderWelcomeWindow(player_name_);
+    } else if (state_ == ClientState::InGame) {
+        std::lock_guard lock(world_mutex_);
+        renderer_->renderGame(world_);
+    } else if (state_ == ClientState::GameOver) {
+        renderer_->renderDeathScreen(0);
+    }
 }
 
-void GameController::doShoot() {
-    // strand-only
-    if (state_.load() != ClientState::InGame) {
+void GameController::handleIncomingBytes(const std::vector<uint8_t>& data) {
+    if (data.empty()) {
         return;
     }
 
-    if (!world_.isMyPlayerAlive()) {
+    std::string_view sv(reinterpret_cast<const char*>(data.data()), data.size());
+    if (sv.starts_with("ACCEPT ")) {
+        auto num_str = sv.substr(7);
+        while (!num_str.empty() && (num_str.back() == '\r' || num_str.back() == '\n' || num_str.back() == ' ')) {
+            num_str.remove_suffix(1);
+        }
+        try {
+            const auto raw_id = static_cast<types::EntityId::value_type>(std::stoull(std::string(num_str)));
+            my_player_id_ = types::EntityId(raw_id);
+            LOG_INFO("[GameController] ACCEPT received: assigned EntityId={}", my_player_id_.get());
+            setState(ClientState::InGame);
+        } catch (const std::exception& e) {
+            LOG_ERROR("[GameController] Failed to parse ID from ACCEPT '{}': {}", sv, e.what());
+        }
         return;
     }
 
-    const auto now = std::chrono::steady_clock::now();
-    if ((now - last_shot_time_) < kShootCooldown) {
-        return;
-    }
-    last_shot_time_ = now;
-    tcp_->send(protocol::encodeShoot());
+    // Если это не текстовый ACCEPT, это бинарный GameSnapshot:
+    try {
+            auto game_snapshot = snapshot::GameSnapshot::Deserialize(data);
+
+            std::lock_guard lock(world_mutex_);
+            world_.updateSnapshot(game_snapshot, my_player_id_);
+
+                    LOG_DEBUG("[GameController] Snapshot received, payload_size={}, entities={}",
+                              data.size(),
+                              world_.getEntities().size());
+
+            if (!has_received_first_snapshot_) {
+                has_received_first_snapshot_ = true;
+                LOG_INFO("[GameController] First snapshot registered! Entities in world: {}", world_.getEntities().size());
+            }
+        } catch (const std::exception& e) {
+            LOG_WARN("[GameController] Failed to deserialize GameSnapshot: {}", e.what());
+        }
 }
 
 }  // namespace client

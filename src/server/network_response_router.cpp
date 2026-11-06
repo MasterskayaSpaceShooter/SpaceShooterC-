@@ -1,115 +1,102 @@
 #include "network_response_router.h"
 
-#include "protocol.h"
+#include <string_view>
+#include <utility>
+#include <vector>
 
-std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(std::shared_ptr<events::EventBus> event_bus) {
-    if (!event_bus) {
-        LOG_ERROR("[NetworkResponseRouter] NetworkResponseRouter::create: event_bus не может быть nullptr");
-        return nullptr;
-    }
-    std::shared_ptr<NetworkResponseRouter> router(new NetworkResponseRouter(std::move(event_bus)));
-    // Подписки устанавливаем после передачи объекта во владение shared_ptr:
-    // только тогда weak_from_this() в слотах будет корректно захватывать себя.
+#include "logger.h"
+#include "network_events.h"
+
+std::shared_ptr<NetworkResponseRouter> NetworkResponseRouter::create(
+    std::shared_ptr<events::EventBus> event_bus) {
+    auto router = std::make_shared<NetworkResponseRouter>(std::move(event_bus));
     router->setupSubscriptions();
     return router;
 }
 
-NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus) :
-    event_bus_(std::move(event_bus)) {}
+NetworkResponseRouter::NetworkResponseRouter(std::shared_ptr<events::EventBus> event_bus)
+    : event_bus_(std::move(event_bus)) {}
 
-NetworkResponseRouter::~NetworkResponseRouter() {
-    subscriptions_.clear();
+void NetworkResponseRouter::start() {
+    LOG_INFO("[NetworkResponseRouter] Started");
 }
 
 void NetworkResponseRouter::setMessageHandler(MessageHandler handler) {
-    std::unique_lock<std::shared_mutex> lock(message_handler_mutex_);
     message_handler_ = std::move(handler);
 }
 
 void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) {
-    const std::string_view msg(reinterpret_cast<const char*>(event.payload.data()), event.payload.size());
-
-    if (msg == "SHOOT") {
-        event_bus_->publish(ShotMessageEvent{event.session_id});
-        return;
+    if (message_handler_) {
+        message_handler_(event.session_id, event.payload);
     }
 
-    if (msg.starts_with("JOIN ")) {
-        std::string player_name(msg.substr(5));
-        event_bus_->publish(PlayerJoinEvent{event.session_id, std::move(player_name)});
+    std::string_view sv(reinterpret_cast<const char*>(event.payload.data()), event.payload.size());
 
-        const std::string accept = "ACCEPT";
-        std::vector<uint8_t> accept_bytes(accept.begin(), accept.end());
-        event_bus_->publish(SendPacketEvent{event.session_id, std::move(accept_bytes)});
-        return;
+    while (!sv.empty() && (sv.back() == '\r' || sv.back() == '\n')) {
+        sv.remove_suffix(1);
     }
 
-    if (msg.starts_with("MOVE ")) {
-        std::string move(msg.substr(5));
-        double angle = 0.0;
-        try {
-            angle = std::stod(move);
-        } catch (const std::exception& e) {
-            LOG_ERROR("[NetworkResponseRouter] Invalid in MOVE angle: {}", e.what());
-            return;
+    if (sv.starts_with("JOIN")) {
+        std::string_view login = sv.substr(4);
+        while (!login.empty() && login.front() == ' ') {
+            login.remove_prefix(1);
         }
-        event_bus_->publish(PlayerMoveEvent{event.session_id, angle});
-        return;
-    }
 
-    MessageHandler handler;
-    {
-        std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);
-        handler = message_handler_;
-    }
-    if (handler) {
-        handler(event.session_id, event.payload);
+        if (!login.empty()) {
+            event_bus_->publish(PlayerJoinEvent{event.session_id, std::string(login)});
+            LOG_INFO("Session {}: Published PlayerJoinEvent with login '{}'", event.session_id, login);
+        }
+    } else if (sv.starts_with("MOVE")) {
+        std::string_view angle_str = sv.substr(4);
+        while (!angle_str.empty() && angle_str.front() == ' ') {
+            angle_str.remove_prefix(1);
+        }
+
+        try {
+            double angle = std::stod(std::string(angle_str));
+            event_bus_->publish(PlayerMoveEvent{event.session_id, angle});
+        } catch (...) {
+            LOG_WARN("Session {}: Failed to parse angle: '{}'", event.session_id, angle_str);
+        }
+    } else if (sv == "SHOOT") {
+        event_bus_->publish(PlayerShootEvent{event.session_id});
+        event_bus_->publish(ShotMessageEvent{event.session_id});
+        LOG_DEBUG("Session {}: Published PlayerShootEvent", event.session_id);
+    } else if (sv.starts_with("RESPAWN")) {
+        event_bus_->publish(PlayerRespawnEvent{event.session_id});
+        LOG_INFO("Session {}: Published PlayerRespawnEvent", event.session_id);
     }
 }
 
 void NetworkResponseRouter::onClientConnected(const ClientConnectedEvent& event) {
-    LOG_INFO("[NetworkResponseRouter] Клиент подключен: session_id={}, адрес={}",
-             event.session_id,
-             event.remote_address);
+    LOG_INFO("Session {}: Client connected from {}", event.session_id, event.remote_address);
 }
 
 void NetworkResponseRouter::onClientDisconnected(const ClientDisconnectedEvent& event) {
-    LOG_INFO("[NetworkResponseRouter] Клиент отключен: session_id={}", event.session_id);
+    LOG_INFO("Session {}: Client disconnected", event.session_id);
 }
 
 void NetworkResponseRouter::setupSubscriptions() {
-    // Захватываем слабый указатель на себя, чтобы не держать объект живым в слотах шины
-    // и избежать вызова на освобождённом объекте при конкурентной публикации см. примечание
-    // к NetworkResponseRouter::create в network_response_router.h.
-    auto self = weak_from_this();
-
-    subscriptions_.emplace_back(event_bus_->subscribe<NetworkMessageEvent>([self](const NetworkMessageEvent& event) {
-        if (auto s = self.lock()) {
-            s->onMessageReceived(event);
-        }
-    }));
-
-    subscriptions_.emplace_back(event_bus_->subscribe<ClientConnectedEvent>([self](const ClientConnectedEvent& event) {
-        if (auto s = self.lock()) {
-            s->onClientConnected(event);
-        }
-    }));
+    subscriptions_.emplace_back(
+        event_bus_->subscribe<NetworkMessageEvent>([this](const NetworkMessageEvent& event) {
+            onMessageReceived(event);
+        }));
 
     subscriptions_.emplace_back(
-        event_bus_->subscribe<ClientDisconnectedEvent>([self](const ClientDisconnectedEvent& event) {
-            if (auto s = self.lock()) {
-                s->onClientDisconnected(event);
-            }
+        event_bus_->subscribe<ClientConnectedEvent>([this](const ClientConnectedEvent& event) {
+            onClientConnected(event);
+        }));
+
+    subscriptions_.emplace_back(
+        event_bus_->subscribe<ClientDisconnectedEvent>([this](const ClientDisconnectedEvent& event) {
+            onClientDisconnected(event);
         }));
 }
 
 void NetworkResponseRouter::sendTo(SessionId session_id, std::vector<uint8_t> payload) {
-    // Формируем и публикуем событие отправки пакета целевому клиенту
     event_bus_->publish(SendPacketEvent{session_id, std::move(payload)});
 }
 
 void NetworkResponseRouter::broadcast(std::vector<uint8_t> payload) {
-    // Формируем и публикуем событие массовой рассылки пакета всем клиентам.
-    // kBroadcastSessionId используется как маркер Broadcast.
     event_bus_->publish(SendPacketEvent{kBroadcastSessionId, std::move(payload)});
 }

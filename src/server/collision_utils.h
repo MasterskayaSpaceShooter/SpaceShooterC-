@@ -1,38 +1,71 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <utility>
 
 #include "entity.h"
+#include "entity_utils.h"
 #include "health_utils.h"
 #include "logger.h"
-#include "score_utils.h"
+#include "math_utils.h"
 
 namespace domain::collision {
 
-namespace detail {
+inline void resolveElasticImpulse(const math::Vector2D& pos1,
+                                  math::Vector2D& vel1,
+                                  math::Scalar mass1,
+                                  const math::Vector2D& pos2,
+                                  math::Vector2D& vel2,
+                                  math::Scalar mass2,
+                                  math::Scalar restitution = 1.0) noexcept {
+    if (!std::isfinite(mass1) || !std::isfinite(mass2) || mass1 <= 0.0 || mass2 <= 0.0) {
+        return;
+    }
 
-// Наносит сущности урон в процентах от её максимального здоровья.
-// Помечает сущность уничтоженной, если после урона здоровье достигло нуля.
+    const auto delta = pos2 - pos1;
+    const auto dist_sq = delta.lengthSquared();
+    if (dist_sq < math::kEps * math::kEps) {
+        return;
+    }
+
+    const auto dist = std::sqrt(dist_sq);
+    const auto inv_dist = 1.0 / dist;
+    const auto normal = delta * inv_dist;
+
+    const auto rel_vel = vel2 - vel1;
+    const auto vel_along_normal = rel_vel.dot(normal);
+
+    if (vel_along_normal >= 0.0) {
+        return;
+    }
+
+    const auto clamped_restitution = std::clamp(restitution, 0.0, 1.0);
+    const auto impulse_magnitude =
+        -(1.0 + clamped_restitution) * vel_along_normal / (1.0 / mass1 + 1.0 / mass2);
+
+    const auto impulse = normal * impulse_magnitude;
+    vel1 -= impulse * (1.0 / mass1);
+    vel2 += impulse * (1.0 / mass2);
+}
+
 inline void applyPercentageDamage(Entity& entity, std::uint16_t percentage) noexcept {
     if (!entity.health) {
         return;
     }
 
-    const auto damage = static_cast<std::uint16_t>((static_cast<std::uint32_t>(entity.health->max) * percentage) / 100);
+    const auto damage = static_cast<std::uint16_t>(
+        (static_cast<std::uint32_t>(entity.health->max) * percentage) / 100);
     applyDamage(*entity.health, damage);
     if (!isAlive(*entity.health)) {
         entity.isDestroyed = true;
     }
 }
 
-// Рассчитывает упругий импульс при столкновении корабля с астероидом.
-// При совпадении позиций использует направление корабля как нормаль столкновения.
 inline void repelAsteroid(Entity& ship, Entity& asteroid) noexcept {
-    if (!ship.transform || !asteroid.transform || !std::isfinite(ship.mass) || !std::isfinite(asteroid.mass) ||
-        ship.mass <= 0.0 || asteroid.mass <= 0.0) {
+    if (!ship.transform || !asteroid.transform || !std::isfinite(ship.mass) ||
+        !std::isfinite(asteroid.mass) || ship.mass <= 0.0 || asteroid.mass <= 0.0) {
         return;
     }
 
@@ -40,7 +73,7 @@ inline void repelAsteroid(Entity& ship, Entity& asteroid) noexcept {
     const auto separation = asteroid_position - ship.transform->position;
     if (separation.lengthSquared() < math::kEps) {
         const auto angle = std::isfinite(ship.transform->angle) ? ship.transform->angle : 0.0;
-        asteroid_position = ship.transform->position + math::Vector2D{std::cos(angle), std::sin(angle)};
+        asteroid_position = ship.transform->position + math::Vector2D(std::cos(angle), std::sin(angle));
     }
 
     math::collision::resolveElasticImpulse(ship.transform->position,
@@ -51,17 +84,27 @@ inline void repelAsteroid(Entity& ship, Entity& asteroid) noexcept {
                                            asteroid.mass);
 }
 
-}  // namespace detail
+inline void onCollisionShipShip(Entity& ship1, Entity& ship2) noexcept {
+    if (!ship1.transform || !ship2.transform) {
+        return;
+    }
 
-/**
- * @brief Resolves a ship-asteroid collision based on their mass ratio.
- *
- * The ship must be the first argument. Entities without the required
- * components, invalid masses, and destroyed entities are ignored.
- */
-inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid, NothrowGrowthPredicate auto can_grow) {
+    resolveElasticImpulse(ship1.transform->position,
+                          ship1.transform->velocity,
+                          ship1.mass,
+                          ship2.transform->position,
+                          ship2.transform->velocity,
+                          ship2.mass);
+}
+
+template <typename CanGrowPredicate>
+inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid, CanGrowPredicate&& can_grow) noexcept {
+    if (!ship.transform || !asteroid.transform) {
+        return;
+    }
+
     if (ship.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Ship) {
-        onCollisionShipAsteroid(asteroid, ship, std::move(can_grow));
+        onCollisionShipAsteroid(asteroid, ship, std::forward<CanGrowPredicate>(can_grow));
         return;
     }
 
@@ -73,139 +116,76 @@ inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid, NothrowGrowt
         return;
     }
 
-    if (!ship.isDamageable() || !asteroid.isDamageable()) {
+    if (ship.mass >= asteroid.mass) {
+        const auto new_mass = ship.mass + asteroid.mass;
+        const auto new_radius = std::sqrt(ship.radius * ship.radius + asteroid.radius * asteroid.radius);
+
+        if (std::forward<CanGrowPredicate>(can_grow)(ship.transform->position, new_radius)) {
+            ship.mass = new_mass;
+            ship.radius = new_radius;
+        }
+
+        if (ship.ship && asteroid.asteroid) {
+            ship.ship->score += asteroid.asteroid->score_reward;
+        }
+
+        asteroid.isDestroyed = true;
+    } else {
+        std::uint16_t damage_percent = 10;
+        if (asteroid.radius >= 40.0) {
+            damage_percent = 50;
+        } else if (asteroid.radius >= 20.0) {
+            damage_percent = 25;
+        }
+
+        applyPercentageDamage(ship, damage_percent);
+        repelAsteroid(ship, asteroid);
+    }
+}
+
+inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid) noexcept {
+    onCollisionShipAsteroid(ship, asteroid, [](auto&, auto) noexcept { return true; });
+}
+
+template <typename OnHit>
+inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid, OnHit&& on_hit) {
+    if (bullet.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Bullet) {
+        onCollisionBulletAsteroid(asteroid, bullet, std::forward<OnHit>(on_hit));
         return;
     }
 
-    if (ship.mass <= 0 || asteroid.mass <= 0) {
+    if (bullet.type != types::EntityType::Bullet || asteroid.type != types::EntityType::Asteroid) {
         return;
     }
 
-    const math::Scalar mass_ratio = asteroid.mass / ship.mass;
-
-    // 1. Слишком мелкий астероид (<= 20% массы корабля):
-    // Большой корабль отталкивает его, оставляя добычу мелким игрокам
-    if (mass_ratio <= 0.2) {
-        detail::repelAsteroid(ship, asteroid);
+    if (!bullet.isValid() || !asteroid.isValid() || bullet.isDestroyed || asteroid.isDestroyed) {
         return;
     }
 
-    // 2. Съедобный диапазон (от 20% до 50% массы корабля):
-    // Корабль впитывает массу астероида
-    if (mass_ratio < 0.5) {
-        if (ship.addMass(asteroid.mass, can_grow)) {
+    // Наносим урон астероиду
+    const std::uint16_t damage = bullet.combat ? bullet.combat->damage : 25;
+    if (asteroid.health) {
+        domain::applyDamage(*asteroid.health, damage);
+        if (!domain::isAlive(*asteroid.health)) {
             asteroid.isDestroyed = true;
-            if (ship.ship && asteroid.asteroid) {
-                addScore(*ship.ship, asteroid.asteroid->score_reward);
-            }
         }
-        return;
+    } else {
+        asteroid.isDestroyed = true;
     }
 
-    // 3. Сопоставимые массы (от 50% до 100%):
-    // Серьёзное столкновение — оба получают по 25% урона
-    if (mass_ratio <= 1.0) {
-        detail::applyPercentageDamage(ship, 25);
-        detail::applyPercentageDamage(asteroid, 25);
-        return;
-    }
+    bullet.isDestroyed = true;
 
-    // 4. Астероид тяжелее корабля (> 100%):
-    // Удар о скалу — 50% урона кораблю
-    detail::applyPercentageDamage(ship, 50);
+    types::EntityId owner_id = bullet.combat ? bullet.combat->owner_id : types::EntityId(0);
+    const bool asteroid_destroyed = asteroid.isDestroyed;
+
+    std::forward<OnHit>(on_hit)(owner_id, asteroid_destroyed);
 }
 
-/**
- * @brief Resolves a collision between two ships.
- *
- * The lighter ship takes 10 damage, the heavier ship takes 5.
- * Ships with equal mass take 7 damage each.
- * Both ships lose 5 score points. If one ship is destroyed,
- * the surviving ship receives 30 points and one frag.
- */
-inline void onCollisionShipShip(Entity& ship1, Entity& ship2) {
-    if (ship1.type != types::EntityType::Ship || ship2.type != types::EntityType::Ship) {
-        LOG_WARN("[Collision] Ship-ship collision ignored: entities {} and {} are not ships",
-                 ship1.id.get(),
-                 ship2.id.get());
-        return;
-    }
-
-    if (!ship1.isValid() || !ship2.isValid()) {
-        LOG_WARN("[Collision] Ship-ship collision ignored: invalid entities {} and {}", ship1.id.get(), ship2.id.get());
-        return;
-    }
-
-    if (!ship1.isDamageable() || !ship2.isDamageable()) {
-        LOG_WARN("[Collision] Ship-ship collision ignored: entities {} and {} are not damageable",
-                 ship1.id.get(),
-                 ship2.id.get());
-        return;
-    }
-
-    if (!ship1.ship || !ship2.ship) {
-        LOG_WARN("[Collision] Ship-ship collision ignored: missing ship component for entities {} and {}",
-                 ship1.id.get(),
-                 ship2.id.get());
-        return;
-    }
-
-    // Определяем урон в зависимости от массы кораблей.
-    std::uint16_t damage1 = 7;
-    std::uint16_t damage2 = 7;
-
-    if (ship1.mass < ship2.mass) {
-        damage1 = 10;
-        damage2 = 5;
-    } else if (ship1.mass > ship2.mass) {
-        damage1 = 5;
-        damage2 = 10;
-    }
-
-    // Штраф за столкновение получают оба корабля.
-    domain::subtractScore(*ship1.ship, 5);
-    domain::subtractScore(*ship2.ship, 5);
-
-    // Наносим урон и отмечаем уничтоженные корабли.
-    domain::applyDamage(*ship1.health, damage1);
-    domain::applyDamage(*ship2.health, damage2);
-
-    if (!domain::isAlive(*ship1.health)) {
-        ship1.isDestroyed = true;
-    }
-
-    if (!domain::isAlive(*ship2.health)) {
-        ship2.isDestroyed = true;
-    }
-
-    // Награда начисляется только выжившему кораблю,
-    // если в результате столкновения уничтожен соперник.
-    if (ship1.isDestroyed && !ship2.isDestroyed) {
-        domain::addScore(*ship2.ship, 30);
-
-        if (ship2.ship->frags < std::numeric_limits<std::uint16_t>::max()) {
-            ++ship2.ship->frags;
-        }
-    } else if (ship2.isDestroyed && !ship1.isDestroyed) {
-        domain::addScore(*ship1.ship, 30);
-
-        if (ship1.ship->frags < std::numeric_limits<std::uint16_t>::max()) {
-            ++ship1.ship->frags;
-        }
-    }
+inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid) noexcept {
+    onCollisionBulletAsteroid(bullet, asteroid, [](types::EntityId, bool) {});
 }
 
-inline void onCollisionShipAsteroid(Entity& ship, Entity& asteroid) {
-    onCollisionShipAsteroid(ship, asteroid, [](const math::Vector2D&, math::Scalar) noexcept {
-        return true;
-    });
-}
 
-/**
- * @brief Resolves a collision between a bullet and a ship.
- *
- * The callback receives the bullet owner ID and whether the ship was destroyed.
- */
 template <typename OnHit>
 inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) {
     if (bullet.type == types::EntityType::Ship && ship.type == types::EntityType::Bullet) {
@@ -214,34 +194,25 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
     }
 
     if (bullet.type != types::EntityType::Bullet || ship.type != types::EntityType::Ship) {
-        LOG_WARN("[Collision] Bullet-ship collision ignored: entities {} and {} have incorrect types",
-                 bullet.id.get(),
-                 ship.id.get());
         return;
     }
 
     if (!bullet.isValid() || !ship.isValid()) {
-        LOG_WARN("[Collision] Bullet-ship collision ignored: invalid entities {} and {}",
-                 bullet.id.get(),
-                 ship.id.get());
         return;
     }
 
     if (!bullet.combat || !ship.health || !ship.ship || !ship.isDamageable()) {
-        LOG_WARN("[Collision] Bullet-ship collision ignored: missing required components or ship {} is not damageable",
-                 ship.id.get());
         return;
     }
 
-    constexpr std::uint16_t kBulletDamage = 25;
     const types::EntityId owner_id = bullet.combat->owner_id;
 
     if (owner_id == ship.id) {
-        LOG_INFO("[Collision] Bullet hit ignored: ship {} hit itself", ship.id.get());
         return;
     }
 
-    domain::applyDamage(*ship.health, kBulletDamage);
+    const std::uint16_t damage = bullet.combat->damage;
+    domain::applyDamage(*ship.health, damage);
 
     bullet.isDestroyed = true;
 
@@ -249,14 +220,47 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
     if (ship_destroyed) {
         ship.isDestroyed = true;
         LOG_INFO("[Collision] Bullet destroyed ship {} (owner: {})", ship.id.get(), owner_id.get());
-    } else {
-        LOG_INFO("[Collision] Bullet hit ship {} (owner: {}), damage: {}",
-                 ship.id.get(),
-                 owner_id.get(),
-                 kBulletDamage);
     }
 
     std::forward<OnHit>(on_hit)(owner_id, ship_destroyed);
+}
+
+inline void onCollisionBulletShip(Entity& bullet, Entity& ship) noexcept {
+    onCollisionBulletShip(bullet, ship, [](types::EntityId, bool) {});
+}
+
+[[nodiscard]] inline bool circleIntersectsOppositeWorldBounds(const math::Vector2D& pos,
+                                                             math::Scalar radius,
+                                                             math::Scalar world_width,
+                                                             math::Scalar world_height) noexcept {
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(radius) ||
+        !std::isfinite(world_width) || !std::isfinite(world_height) || radius < 0.0 ||
+        world_width <= 0.0 || world_height <= 0.0) {
+        return false;
+    }
+
+    const auto half_w = world_width * 0.5;
+    const auto half_h = world_height * 0.5;
+
+    const bool intersects_horizontal = (pos.x - radius < -half_w) && (pos.x + radius > half_w);
+    const bool intersects_vertical = (pos.y - radius < -half_h) && (pos.y + radius > half_h);
+
+    return intersects_horizontal || intersects_vertical;
+}
+
+[[nodiscard]] inline bool isShipCollisionValid(const Entity& entity) noexcept {
+    return entity.type == types::EntityType::Ship && entity.isValid() && entity.transform.has_value() &&
+           entity.ship.has_value();
+}
+
+[[nodiscard]] inline bool isAsteroidCollisionValid(const Entity& entity) noexcept {
+    return entity.type == types::EntityType::Asteroid && entity.isValid() && entity.transform.has_value() &&
+           entity.asteroid.has_value();
+}
+
+[[nodiscard]] inline bool isBulletCollisionValid(const Entity& entity) noexcept {
+    return entity.type == types::EntityType::Bullet && entity.isValid() && entity.transform.has_value() &&
+           entity.combat.has_value();
 }
 
 }  // namespace domain::collision

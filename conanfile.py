@@ -11,6 +11,7 @@ class NetworkProjectRecipe(ConanFile):
         self.requires("boost/1.86.0")
         self.requires("gtest/1.15.0")
         self.requires("flatbuffers/25.12.19")
+        self.requires("sfml/2.6.2")  # либо "sfml/2.5.1
 
     def build_requirements(self):
         # Только инструменты сборки: автономный Ninja
