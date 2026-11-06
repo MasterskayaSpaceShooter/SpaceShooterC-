@@ -361,6 +361,7 @@ private:
      * @warning Используется только для тестов.
      */
     friend class WorldInstanceTestAccessor;
+    friend class TwoShipsShootTestAccessor;
 
     // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
