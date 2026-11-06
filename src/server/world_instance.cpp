@@ -560,6 +560,8 @@ void WorldInstance::checkForIntersections(domain::Entity& ship,
             break;
         }
     }
+}
+
 void WorldInstance::maintainAsteroidPopulation() {
     asteroid_factory_.update(freePosition());
 }
