@@ -5,12 +5,12 @@
 
 namespace {
 
-domain::Entity createBullet(types::EntityId owner_id = types::EntityId{1}) {
+domain::Entity createBullet(types::EntityId owner_id = types::EntityId{1}, std::uint16_t damage = 25) {
     domain::Entity bullet;
     bullet.type = types::EntityType::Bullet;
     bullet.radius = 2.0;
     bullet.transform.emplace();
-    bullet.combat.emplace(domain::CombatComponent{25, owner_id});
+    bullet.combat.emplace(domain::CombatComponent{damage, owner_id});
 
     return bullet;
 }
@@ -40,6 +40,18 @@ TEST(BulletAsteroidCollisionTest, BulletDealsTwentyFiveDamage) {
     EXPECT_TRUE(bullet.isDestroyed);
     EXPECT_FALSE(asteroid.isDestroyed);
     EXPECT_TRUE(callback_called);
+}
+
+TEST(BulletAsteroidCollisionTest, UsesDamageFromCombatComponent) {
+    auto bullet = createBullet(types::EntityId{1}, 10);
+    auto asteroid = createAsteroid(100);
+
+    domain::collision::onCollisionBulletAsteroid(bullet, asteroid, [](types::EntityId, bool) {
+    });
+
+    EXPECT_EQ(asteroid.health->current, 90);
+    EXPECT_TRUE(bullet.isDestroyed);
+    EXPECT_FALSE(asteroid.isDestroyed);
 }
 
 TEST(BulletAsteroidCollisionTest, BulletDestroysAsteroidWithTwentyFiveXp) {
@@ -178,6 +190,43 @@ TEST(BulletAsteroidCollisionTest, AsteroidWithoutAsteroidComponentDoesNotCauseCo
     });
 
     EXPECT_EQ(asteroid.health->current, 100);
+    EXPECT_FALSE(bullet.isDestroyed);
+    EXPECT_FALSE(callback_called);
+}
+
+TEST(BulletAsteroidCollisionTest, HandlesReversedArgumentOrder) {
+    const types::EntityId owner_id{42};
+    auto bullet = createBullet(owner_id);
+    auto asteroid = createAsteroid(25);
+
+    bool callback_called = false;
+    types::EntityId actual_owner_id{};
+    bool asteroid_destroyed = false;
+
+    domain::collision::onCollisionBulletAsteroid(asteroid, bullet, [&](types::EntityId id, bool destroyed) {
+        callback_called = true;
+        actual_owner_id = id;
+        asteroid_destroyed = destroyed;
+    });
+
+    EXPECT_EQ(asteroid.health->current, 0);
+    EXPECT_TRUE(bullet.isDestroyed);
+    EXPECT_TRUE(asteroid.isDestroyed);
+    EXPECT_TRUE(callback_called);
+    EXPECT_EQ(actual_owner_id, owner_id);
+    EXPECT_TRUE(asteroid_destroyed);
+}
+
+TEST(BulletAsteroidCollisionTest, AsteroidWithZeroXpDoesNotCauseCollision) {
+    auto bullet = createBullet();
+    auto asteroid = createAsteroid(0);
+
+    bool callback_called = false;
+
+    domain::collision::onCollisionBulletAsteroid(bullet, asteroid, [&](types::EntityId, bool) {
+        callback_called = true;
+    });
+
     EXPECT_FALSE(bullet.isDestroyed);
     EXPECT_FALSE(callback_called);
 }

@@ -342,6 +342,8 @@ private:
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
     void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
 
+    void addScoreToBulletOwner(types::EntityId owner_id, std::uint32_t score);
+
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
      * @return Вектор пар (ник, очки), отсортированный по убыванию.

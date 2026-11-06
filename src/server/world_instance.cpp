@@ -380,62 +380,43 @@ void WorldInstance::onCollisionShipAsteroid(domain::Entity& ship, domain::Entity
     }
 }
 
-void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
-    domain::collision::onCollisionBulletShip(proj, ship, [this](types::EntityId owner_id, bool ship_destroyed) {
-        for (auto& slot : entities_.storage()) {
-            if (!slot || slot->isDestroyed || slot->id != owner_id) {
-                continue;
-            }
+void WorldInstance::addScoreToBulletOwner(types::EntityId owner_id, std::uint32_t score) {
+    for (auto& slot : entities_.storage()) {
+        if (!slot || slot->isDestroyed || slot->id != owner_id) {
+            continue;
+        }
 
-            if (slot->type != types::EntityType::Ship || !slot->ship) {
-                LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
-                return;
-            }
-
-            const std::uint32_t score = ship_destroyed ? 50 : 5;
-            domain::addScore(*slot->ship, score);
-
-            LOG_INFO("[Collision] Ship {} received {} points (target destroyed: {})",
-                     owner_id.get(),
-                     score,
-                     ship_destroyed);
+        if (slot->type != types::EntityType::Ship || !slot->ship) {
+            LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
             return;
         }
 
-        LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
+        domain::addScore(*slot->ship, score);
+
+        LOG_INFO("[Collision] Ship {} received {} points", owner_id.get(), score);
+        return;
+    }
+
+    LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
+}
+
+void WorldInstance::onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship) {
+    domain::collision::onCollisionBulletShip(proj, ship, [this](types::EntityId owner_id, bool ship_destroyed) {
+        const std::uint32_t score = ship_destroyed ? 50 : 5;
+        addScoreToBulletOwner(owner_id, score);
     });
 }
 
 void WorldInstance::onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid) {
-    domain::collision::onCollisionBulletAsteroid(
-        proj,
-        asteroid,
-        [this](types::EntityId owner_id, bool asteroid_destroyed) {
-            if (!asteroid_destroyed) {
-                return;
-            }
+    domain::collision::onCollisionBulletAsteroid(proj,
+                                                 asteroid,
+                                                 [this](types::EntityId owner_id, bool asteroid_destroyed) {
+                                                     if (!asteroid_destroyed) {
+                                                         return;
+                                                     }
 
-            for (auto& slot : entities_.storage()) {
-                if (!slot || slot->isDestroyed || slot->id != owner_id) {
-                    continue;
-                }
-
-                if (slot->type != types::EntityType::Ship || !slot->ship) {
-                    LOG_WARN("[Collision] Bullet owner {} is not a valid ship", owner_id.get());
-                    return;
-                }
-
-                constexpr std::uint32_t kAsteroidDestroyReward = 25;
-                domain::addScore(*slot->ship, kAsteroidDestroyReward);
-
-                LOG_INFO("[Collision] Ship {} received {} points for destroying an asteroid",
-                         owner_id.get(),
-                         kAsteroidDestroyReward);
-                return;
-            }
-
-            LOG_WARN("[Collision] Bullet owner ship {} not found", owner_id.get());
-        });
+                                                     addScoreToBulletOwner(owner_id, world::kAsteroidDestroyReward);
+                                                 });
 }
 
 void WorldInstance::maintainAsteroidPopulation() {
