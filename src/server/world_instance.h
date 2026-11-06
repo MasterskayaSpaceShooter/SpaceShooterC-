@@ -29,6 +29,7 @@ struct ActionEvent {
     ActionType type{ActionType::Unknown};
     math::Vector2D move_direction{};
     math::Vector2D target_point{};
+    double angle{};
     bool is_shooting{false};
     std::string player_name{};
 };
@@ -357,6 +358,14 @@ private:
     void onPlayerJoin(const PlayerJoinEvent& event);
 
     /**
+     * @brief Колбек для подписки на событие PlayerMoveEvent
+     * @details Создаёт ActionType::MoveAndShoot и кладёт в очерердь
+     * @inputs Входные параметры: событие из шины PlayerMoveEvent
+     * @outputs Выходных значений нет.
+     */
+    void onPlayerMove(const PlayerMoveEvent& event);
+
+    /**
      * @brief Разрешает тестовому классу доступ к приватным данным WI
      * @warning Используется только для тестов.
      */
@@ -394,4 +403,5 @@ private:
     std::unordered_map<SessionId, types::EntityId> session_to_ship_;  ///< Связь сессии и корабля
     boost::signals2::scoped_connection sub_player_join_;
     asteroid_factory::AsteroidFactory asteroid_factory_;
+    boost::signals2::scoped_connection sub_player_move_;  // Подписка на движения клиента
 };

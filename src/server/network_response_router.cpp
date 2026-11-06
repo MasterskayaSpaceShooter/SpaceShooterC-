@@ -44,6 +44,19 @@ void NetworkResponseRouter::onMessageReceived(const NetworkMessageEvent& event) 
         return;
     }
 
+    if (msg.starts_with("MOVE ")) {
+        std::string move(msg.substr(5));
+        double angle = 0.0;
+        try {
+            angle = std::stod(move);
+        } catch (const std::exception& e) {
+            LOG_ERROR("[NetworkResponseRouter] Invalid in MOVE angle: {}", e.what());
+            return;
+        }
+        event_bus_->publish(PlayerMoveEvent{event.session_id, angle});
+        return;
+    }
+
     MessageHandler handler;
     {
         std::shared_lock<std::shared_mutex> lock(message_handler_mutex_);

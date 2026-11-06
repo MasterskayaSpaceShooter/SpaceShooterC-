@@ -310,24 +310,24 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
                     auto ship_id = it->second;
 
                     if (domain::Entity* ship = entities_.findByEntityID(ship_id)) {
-                        if (action.move_direction.lengthSquared() > 0) {
-                            ship->transform->velocity = action.move_direction;
-                        }
+                        if (ship->transform.has_value()) {
+                            ship->transform->angle = action.angle;
 
-                        if (action.is_shooting) {
-                            auto bullet = entities_.acquire();
-                            bullet->type = types::EntityType::Bullet;
-                            bullet->radius = world::kBulletRadius;
-                            bullet->transform = domain::TransformComponent{};
-                            bullet->combat = domain::CombatComponent{};
+                            if (action.is_shooting) {
+                                auto bullet = entities_.acquire();
+                                bullet->type = types::EntityType::Bullet;
+                                bullet->radius = world::kBulletRadius;
+                                bullet->transform = domain::TransformComponent{};
+                                bullet->combat = domain::CombatComponent{};
 
-                            auto angle = ship->transform->angle;
-                            math::Vector2D direction{std::cos(angle), std::sin(angle)};
-                            bullet->transform->position = ship->transform->position + (direction * ship->radius);
-                            bullet->transform->velocity = direction * world::kBulletSpeed;
+                                auto angle = ship->transform->angle;
+                                math::Vector2D direction{std::cos(angle), std::sin(angle)};
+                                bullet->transform->position = ship->transform->position + (direction * ship->radius);
+                                bullet->transform->velocity = direction * world::kBulletSpeed;
 
-                            bullet->combat->owner_id = ship_id;
-                            bullet->combat->damage = world::kBulletDamage;
+                                bullet->combat->owner_id = ship_id;
+                                bullet->combat->damage = world::kBulletDamage;
+                            }
                         }
                     }
                 }
@@ -340,8 +340,8 @@ void WorldInstance::processInputQueue(std::vector<PendingJoin>& new_players) {
     }
 }
 
-void WorldInstance::updatePhysics(math::Scalar) {
-    // TODO: обновить позиции кораблей, снарядов и астероидов за интервал тика (dt).
+void WorldInstance::updatePhysics(math::Scalar dt) {
+    domain::updateMovementAndBounds(entities_.storage(), dt, world_width_, world_height_);
 }
 
 void WorldInstance::resolveCollisions() {
@@ -446,6 +446,7 @@ void WorldInstance::spawnShips(const std::vector<PendingJoin>& new_players) {
         std::copy_n(join.player_name.data(), len, ship.name.begin());
         ship.thrust_power = world::kShipDefaultThrustPower;
         ship.drag = world::kShipDefaultDrag;
+        ship.is_thrusting = true;
         entity->ship = ship;
 
         entity->health = domain::HealthComponent{world::kShipDefaultHealth, world::kShipDefaultHealth};
@@ -538,7 +539,12 @@ void WorldInstance::setupSubscriptions() {
         }
     });
 
-    // далее другие подписки
+    // подписка на движения клиента
+    sub_player_move_ = event_bus_->subscribe<PlayerMoveEvent>([weak_self](const PlayerMoveEvent& event) {
+        if (auto world = weak_self.lock()) {
+            world->onPlayerMove(event);
+        }
+    });
 }
 
 void WorldInstance::onClientDisconnected(const ClientDisconnectedEvent& event) {
@@ -565,4 +571,13 @@ void WorldInstance::onShotReceived(const ShotMessageEvent& event) {
     action.is_shooting = true;
     enqueueAction(std::move(action));
     LOG_INFO("[WorldInstance] MoveAndShoot for session {}", event.session_id);
+}
+
+void WorldInstance::onPlayerMove(const PlayerMoveEvent& event) {
+    ActionEvent action;
+    action.type = ActionType::MoveAndShoot;
+    action.session_id = event.session_id;
+    action.angle = event.angle;
+    enqueueAction(std::move(action));
+    LOG_INFO("[WorldInstance] PlayerMove: {}: move on angle {}", event.session_id, event.angle);
 }
