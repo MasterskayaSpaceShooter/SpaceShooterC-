@@ -339,7 +339,9 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    // TODO: реализовать остальные обработчики коллизий.
+    bool mayCollide(types::EntityType a, types::EntityType b) const noexcept;
+    void dispatchCollision(domain::Entity& a, domain::Entity& b);
+
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
 
@@ -372,12 +374,13 @@ private:
     friend class WorldInstanceTestAccessor;
     friend class TwoShipsShootTestAccessor;
 
-    // TODO: реализовать функции обработки коллизий на основе domain::Entity.
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
+    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
+
+    void reapDestroyedShips();
+
     enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
     [[nodiscard]] GrowStatus tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept;
-    // void onCollision(domain::Entity& proj, domain::Entity& ship);
-    // void onCollision(domain::Entity& proj, domain::Entity& asteroid);
 
     /**
      * @brief Колбек для подписки на событие ShotMessageEvent
