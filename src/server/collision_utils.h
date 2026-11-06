@@ -200,7 +200,6 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         return;
     }
 
-    constexpr std::uint16_t kBulletDamage = 25;
     const types::EntityId owner_id = bullet.combat->owner_id;
 
     if (owner_id == ship.id) {
@@ -208,7 +207,7 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         return;
     }
 
-    domain::applyDamage(*ship.health, kBulletDamage);
+    domain::applyDamage(*ship.health, bullet.combat->damage);
 
     bullet.isDestroyed = true;
 
@@ -220,7 +219,7 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         LOG_INFO("[Collision] Bullet hit ship {} (owner: {}), damage: {}",
                  ship.id.get(),
                  owner_id.get(),
-                 kBulletDamage);
+                 bullet.combat->damage);
     }
 
     std::forward<OnHit>(on_hit)(owner_id, ship_destroyed);
@@ -233,6 +232,11 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
  */
 template <typename OnHit>
 inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid, OnHit&& on_hit) {
+    if (bullet.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Bullet) {
+        onCollisionBulletAsteroid(asteroid, bullet, std::forward<OnHit>(on_hit));
+        return;
+    }
+
     if (bullet.type != types::EntityType::Bullet || asteroid.type != types::EntityType::Asteroid) {
         LOG_WARN("[Collision] Bullet-asteroid collision ignored: entities {} and {} have incorrect types",
                  bullet.id.get(),
@@ -255,10 +259,9 @@ inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid, OnHit&& 
         return;
     }
 
-    constexpr std::uint16_t kBulletDamage = 25;
     const types::EntityId owner_id = bullet.combat->owner_id;
 
-    domain::applyDamage(*asteroid.health, kBulletDamage);
+    domain::applyDamage(*asteroid.health, bullet.combat->damage);
 
     bullet.isDestroyed = true;
 
@@ -274,7 +277,7 @@ inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid, OnHit&& 
         LOG_INFO("[Collision] Bullet hit asteroid {} (owner: {}), damage: {}",
                  asteroid.id.get(),
                  owner_id.get(),
-                 kBulletDamage);
+                 bullet.combat->damage);
     }
 
     std::forward<OnHit>(on_hit)(owner_id, asteroid_destroyed);

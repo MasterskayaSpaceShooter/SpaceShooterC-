@@ -30,4 +30,11 @@ inline constexpr double kBulletSpeed = 500.0;  ///< Скорость снаря�
 inline constexpr double kBulletRadius = 2.0;   ///< Радиус Снаряда (пули)
 inline constexpr std::int64_t kBulletDamage = 25;  ///< Снаряды имеют стаблильное кол-во урона = 25 у.е.
 
+// Награды за попадание по кораблю.
+inline constexpr std::uint32_t kShipHitReward = 5;
+inline constexpr std::uint32_t kShipDestroyReward = 50;
+
+// Награда за уничтожение астероида.
+inline constexpr std::uint32_t kAsteroidDestroyReward = 25;
+
 }  // namespace world
