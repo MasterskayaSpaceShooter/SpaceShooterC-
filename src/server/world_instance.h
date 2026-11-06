@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "asteroid_factory.h"
@@ -340,11 +342,14 @@ private:
      */
     void onClientDisconnected(const ClientDisconnectedEvent& event);
 
-    bool mayCollide(types::EntityType a, types::EntityType b) const noexcept;
-    void dispatchCollision(domain::Entity& a, domain::Entity& b);
-
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
+    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
+    [[nodiscard]] bool mayCollide(types::EntityType a, types::EntityType b) const noexcept;
+    using CollisionPair = std::pair<types::EntityId, types::EntityId>;
+    using CollisionPairSet = std::set<CollisionPair>;
+    void dispatchCollision(domain::Entity& a, domain::Entity& b, CollisionPairSet* resolved_pairs = nullptr);
+    void reapDestroyedShips();
 
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
@@ -375,11 +380,9 @@ private:
     friend class WorldInstanceTestAccessor;
     friend class TwoShipsShootTestAccessor;
 
-    void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
-    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
-
-    void reapDestroyedShips();
-
+    void onCollisionShipAsteroid(domain::Entity& ship,
+                                 domain::Entity& asteroid,
+                                 CollisionPairSet* resolved_pairs = nullptr);
     enum class GrowStatus { CanGrow, CannotFit, InvalidInput };
     [[nodiscard]] GrowStatus tryGrowShip(math::Vector2D& position, math::Scalar radius) const noexcept;
     /// Проверяет пересечения корабля с предполагаемым радиусом после роста.
@@ -388,7 +391,8 @@ private:
     void checkForIntersections(domain::Entity& ship,
                                const domain::Entity& consumed_asteroid,
                                const math::Vector2D& candidate_position,
-                               math::Scalar candidate_radius) noexcept;
+                               math::Scalar candidate_radius,
+                               CollisionPairSet* resolved_pairs = nullptr) noexcept;
 
     /**
      * @brief Колбек для подписки на событие ShotMessageEvent
