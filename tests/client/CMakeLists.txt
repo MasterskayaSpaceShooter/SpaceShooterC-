@@ -2,6 +2,7 @@ include(GoogleTest)
 
 add_executable(tcp_client_tests
     test_tcp_client.cpp
+    test_death_screen.cpp
 )
 
 target_link_libraries(tcp_client_tests PRIVATE

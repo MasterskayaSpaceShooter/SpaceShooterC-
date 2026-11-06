@@ -1,12 +1,16 @@
 #pragma once
 
 #include <unordered_map>
+#include <vector>
 
+#include "death_screen.h"
 #include "entity_snapshot.h"
 #include "game_snapshot.h"
 #include "types.h"
 
 namespace client {
+
+class DeathScreen;  // <-- Forward declaration
 class ClientWorld {
 public:
     ClientWorld() = default;
@@ -43,6 +47,12 @@ public:
     [[nodiscard]] const std::vector<snapshot::LeaderboardEntry>& getLeaderboard() const noexcept {
         return leaderboard_;
     }
+
+    /**
+     * @brief Обновляет состояние экрана смерти на основе текущего состояния мира.
+     * @param death_screen Экран смерти, который нужно обновить.
+     */
+    void updateDeathScreen(DeathScreen& death_screen) const;
 
 private:
     types::EntityId my_player_id_{0};

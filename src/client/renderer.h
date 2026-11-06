@@ -7,6 +7,8 @@
 
 namespace client {
 
+class ClientWorld;  // <-- Forward declaration
+
 /**
  * @brief Интерфейс рендера клиента.
  * @details Позволяет подменять реализацию: реальный рендер (SDL/SFML/OpenGL)
