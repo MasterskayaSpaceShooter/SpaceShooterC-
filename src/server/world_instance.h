@@ -344,6 +344,9 @@ private:
 
     void onCollisionShipShip(domain::Entity& ship1, domain::Entity& ship2);
     void onCollisionBulletShip(domain::Entity& proj, domain::Entity& ship);
+    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
+
+    void addScoreToBulletOwner(types::EntityId owner_id, std::uint32_t score);
 
     /**
      * @brief Собирает таблицу лидеров (топ-10 игроков по очкам).
@@ -375,7 +378,6 @@ private:
     friend class TwoShipsShootTestAccessor;
 
     void onCollisionShipAsteroid(domain::Entity& ship, domain::Entity& asteroid);
-    void onCollisionBulletAsteroid(domain::Entity& proj, domain::Entity& asteroid);
 
     void reapDestroyedShips();
 

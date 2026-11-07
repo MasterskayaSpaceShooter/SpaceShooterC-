@@ -200,7 +200,6 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         return;
     }
 
-    constexpr std::uint16_t kBulletDamage = 25;
     const types::EntityId owner_id = bullet.combat->owner_id;
 
     if (owner_id == ship.id) {
@@ -208,7 +207,7 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         return;
     }
 
-    domain::applyDamage(*ship.health, kBulletDamage);
+    domain::applyDamage(*ship.health, bullet.combat->damage);
 
     bullet.isDestroyed = true;
 
@@ -220,10 +219,68 @@ inline void onCollisionBulletShip(Entity& bullet, Entity& ship, OnHit&& on_hit) 
         LOG_INFO("[Collision] Bullet hit ship {} (owner: {}), damage: {}",
                  ship.id.get(),
                  owner_id.get(),
-                 kBulletDamage);
+                 bullet.combat->damage);
     }
 
     std::forward<OnHit>(on_hit)(owner_id, ship_destroyed);
+}
+
+/**
+ * @brief Resolves a collision between a bullet and an asteroid.
+ *
+ * The callback receives the bullet owner ID and whether the asteroid was destroyed.
+ */
+template <typename OnHit>
+inline void onCollisionBulletAsteroid(Entity& bullet, Entity& asteroid, OnHit&& on_hit) {
+    if (bullet.type == types::EntityType::Asteroid && asteroid.type == types::EntityType::Bullet) {
+        onCollisionBulletAsteroid(asteroid, bullet, std::forward<OnHit>(on_hit));
+        return;
+    }
+
+    if (bullet.type != types::EntityType::Bullet || asteroid.type != types::EntityType::Asteroid) {
+        LOG_WARN("[Collision] Bullet-asteroid collision ignored: entities {} and {} have incorrect types",
+                 bullet.id.get(),
+                 asteroid.id.get());
+        return;
+    }
+
+    if (!bullet.isValid() || !asteroid.isValid()) {
+        LOG_WARN("[Collision] Bullet-asteroid collision ignored: invalid entities {} and {}",
+                 bullet.id.get(),
+                 asteroid.id.get());
+        return;
+    }
+
+    if (!bullet.combat || !asteroid.health || !asteroid.asteroid || !asteroid.isDamageable()) {
+        LOG_WARN(
+            "[Collision] Bullet-asteroid collision ignored: missing required components or asteroid {} is not "
+            "damageable",
+            asteroid.id.get());
+        return;
+    }
+
+    const types::EntityId owner_id = bullet.combat->owner_id;
+
+    domain::applyDamage(*asteroid.health, bullet.combat->damage);
+
+    bullet.isDestroyed = true;
+
+    const bool asteroid_destroyed = !domain::isAlive(*asteroid.health);
+
+    if (asteroid_destroyed) {
+        asteroid.isDestroyed = true;
+
+        LOG_INFO("[Collision] Bullet destroyed asteroid {} (owner: {})", asteroid.id.get(), owner_id.get());
+
+        // TODO: Split the asteroid into smaller asteroids.
+    } else {
+        LOG_INFO("[Collision] Bullet hit asteroid {} (owner: {}), damage: {}",
+                 asteroid.id.get(),
+                 owner_id.get(),
+                 bullet.combat->damage);
+    }
+
+    std::forward<OnHit>(on_hit)(owner_id, asteroid_destroyed);
 }
 
 }  // namespace domain::collision
